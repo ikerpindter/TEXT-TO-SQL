@@ -1,0 +1,5 @@
+company_id,fiscal_year,revenues,net_income,homes_delivered,backlog_value,unit_scale
+1,2023,34233366,3938511,73087,6633750,thousands
+1,2024,35441452,3932533,80210,5372784,thousands
+2,2023,35460.4,4745.7,82917,5923.3,millions
+2,2024,36801.4,4756.4,89690,4770.3,millions

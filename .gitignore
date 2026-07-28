@@ -1,0 +1,9 @@
+# This file is deliberately the first file created in this repository.
+# Nothing else was written to disk before it.
+
+CLAUDE.md
+.env
+.venv
+__pycache__
+data/portfolio.db
+evals/results/*.tmp

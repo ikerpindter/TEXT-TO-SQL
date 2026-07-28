@@ -1,0 +1,21 @@
+id,company_id,name,region,state,opened_date,lot_count,budget_usd
+1,1,Marbella Reserve,East,FL,2022-03-14,248,42500000
+2,1,Wexford Crossing,East,NJ,2021-09-01,96,28750000
+3,1,Willow Bank,East,PA,2024-01-15,72,19400000
+4,1,Ashton Grove,Central,NC,2023-01-23,312,51200000
+5,1,Sterling Farms,Central,TN,2022-07-11,184,29900000
+6,1,Cypress Bend,Texas,TX,2021-05-17,405,47800000
+7,1,Highland Ranch,Texas,TX,2023-08-29,276,33400000
+8,1,Sierra Vista,West,AZ,2022-11-07,220,38600000
+9,1,Alder Point,West,CA,2023-04-03,138,71950000
+10,1,Copper Ridge,West,CO,2021-02-22,167,31250000
+11,2,Rosewood Trails,South Central,TX,2021-11-08,392,44100000
+12,2,Bexar Landing,South Central,TX,2023-02-13,258,30700000
+13,2,Palmetto Grove,Southeast,FL,2022-06-20,341,53900000
+14,2,Magnolia Farms,Southeast,GA,2021-08-30,205,27600000
+15,2,Cardinal Point,East,NC,2023-05-08,289,41300000
+16,2,Bayard Commons,East,SC,2022-02-14,146,22850000
+17,2,Silver Sage,Southwest,AZ,2022-09-26,318,39750000
+18,2,Truckee Meadows,Southwest,NV,2023-10-02,174,36200000
+19,2,Vancouver Heights,Northwest,WA,2021-04-19,131,34800000
+20,2,Prairie Crossing,North,IL,2024-03-11,88,17300000
