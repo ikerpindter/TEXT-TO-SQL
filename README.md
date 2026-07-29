@@ -1,9 +1,9 @@
 # text-to-SQL con guardrails
 
 Preguntas en lenguaje natural contra una base de datos de constructoras de
-vivienda. El proyecto se construye por rebanadas; ésta es la primera.
+vivienda. El proyecto se construye por rebanadas; van dos.
 
-## Qué hay en esta rebanada
+## Qué hay hasta ahora
 
 El esqueleto que va de una pregunta a un resultado:
 
@@ -16,6 +16,10 @@ devuelve el modelo se ejecuta sin validar, sin parsear, sin límite de filas y
 sin timeout. Eso es a propósito: cada guardrail se agrega en su propia rebanada
 y con su propia medición, no todos de golpe.
 
+La rebanada 2 agregó la **inyección de valores**: por cada columna de texto que
+no sea llave y tenga 20 valores distintos o menos, el esquema lleva la lista
+completa. Completos o nada, nunca una muestra. Se prende con `--values`.
+
 ## Correr
 
 Todo en WSL. Nunca desde PowerShell.
@@ -27,9 +31,22 @@ cp .env.example .env                    # y pon tu OPENAI_API_KEY
 
 uv run txt2sql "cuantas casas se cerraron en Texas"
 uv run txt2sql --schema                 # el esquema que ve el modelo, sin costo
+uv run txt2sql --schema --values        # el mismo, con los valores inyectados
 ```
 
 El CLI imprime siempre los tokens y el costo real de la llamada.
+
+Para repetir las cinco preguntas N veces por configuración:
+
+```bash
+uv run python evals/batch.py --config ddl_only --n 5 --dry-run   # sin costo
+uv run python evals/batch.py --config ddl_only --n 5
+uv run python evals/batch.py --config values_text_maxcard20 --n 5
+```
+
+`evals/batch.py` **no es el eval harness**: no tiene gold set, scoring ni
+métricas. Solo llama, corre el SQL y deja el crudo en `evals/runs/`. El harness
+es la rebanada 4.
 
 ## Los datos
 
@@ -68,7 +85,38 @@ El esquema que se le manda al modelo **no** incluye esos comentarios: se
 introspecciona con `PRAGMA table_info`, que devuelve el catálogo sin anotar.
 Ver el porqué en el docstring de [src/txt2sql/schema.py](src/txt2sql/schema.py).
 
-## Fuera de alcance en esta rebanada
+## Resultados medidos
+
+Cada corrida vive en su propio archivo congelado bajo `evals/results/`. Un
+archivo de resultados nunca se edita: si cambia una variable, es un archivo
+nuevo.
+
+| Archivo | Qué midió |
+|---|---|
+| [`baseline_ddl_only.md`](evals/results/baseline_ddl_only.md) | Rebanada 1, DDL puro, N=1 |
+| [`ddl_only_n5.md`](evals/results/ddl_only_n5.md) | Rebanada 2, control: DDL puro, N=5 |
+| [`values_text_maxcard20_n5.md`](evals/results/values_text_maxcard20_n5.md) | Rebanada 2, con valores, N=5 |
+
+El resultado de la rebanada 2, en un caso concreto. Q4 pregunta por el
+presupuesto total de las comunidades de D.R. Horton:
+
+| Esquema enviado | Devolvió | Real | ¿Se delata? |
+|---|---|---|---|
+| DDL puro | `NULL` | $348,500,000 | sí, es un NULL |
+| DDL + valores | **$14,388,050,000** | $348,500,000 | **no** |
+
+Misma pregunta, mismo modelo, misma base, 5 de 5 corridas en cada brazo. Lo
+único que cambió fue el bloque de valores. El literal mal adivinado estaba
+tapando un fan-out de 41.3x; al arreglar el literal, el fan-out quedó expuesto y
+el resultado dejó de delatarse.
+
+Las proporciones agregadas de las dos corridas están en los archivos de
+resultados. **No se citan aquí a propósito:** sin scoring automático contra un
+gold set —rebanada 4— son medición interna y no aguantan una cifra de portada.
+Los casos individuales sí, porque cada uno se reproduce corriendo el SQL guardado
+en `evals/runs/`.
+
+## Fuera de alcance por ahora
 
 Validación de esquema, parseo de SQL, límite de filas, timeout, harness de
-evaluación, gold set y pruebas de ataque. Nada de eso está aquí todavía.
+evaluación con gold set, y pruebas de ataque. Nada de eso está aquí todavía.

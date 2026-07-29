@@ -1,0 +1,754 @@
+{
+  "config": "ddl_only",
+  "with_values": false,
+  "max_cardinality": 20,
+  "n": 5,
+  "date": "2026-07-28",
+  "model_requested": "gpt-5.4-nano",
+  "db_path": "/mnt/c/Users/Iker Pindter/Desktop/Proyectos - Claude/00 - Proyectos Portafolio/TEXT-TO-SQL - Portfolio/SQL/data/portfolio.db",
+  "schema_text": "CREATE TABLE companies (\n  id INTEGER PRIMARY KEY,\n  name TEXT NOT NULL,\n  ticker TEXT NOT NULL,\n  fiscal_year_end TEXT NOT NULL\n);\n\nCREATE TABLE financials (\n  company_id INTEGER NOT NULL,\n  fiscal_year INTEGER NOT NULL,\n  revenues REAL,\n  net_income REAL,\n  homes_delivered INTEGER,\n  backlog_value REAL,\n  unit_scale TEXT NOT NULL,\n  PRIMARY KEY (company_id, fiscal_year),\n  FOREIGN KEY (company_id) REFERENCES companies(id)\n);\n\nCREATE TABLE communities (\n  id INTEGER PRIMARY KEY,\n  company_id INTEGER NOT NULL,\n  name TEXT NOT NULL,\n  region TEXT NOT NULL,\n  state TEXT NOT NULL,\n  opened_date TEXT NOT NULL,\n  lot_count INTEGER NOT NULL,\n  budget_usd REAL NOT NULL,\n  FOREIGN KEY (company_id) REFERENCES companies(id)\n);\n\nCREATE TABLE homes (\n  id INTEGER PRIMARY KEY,\n  community_id INTEGER NOT NULL,\n  list_price REAL NOT NULL,\n  sale_price REAL,\n  contract_date TEXT,\n  closing_date TEXT,\n  status TEXT NOT NULL,\n  FOREIGN KEY (community_id) REFERENCES communities(id)\n);",
+  "system_prompt": "Eres un generador de SQL para SQLite. Recibes el esquema de una base de datos y una pregunta en lenguaje natural. Devuelves UNA sola consulta SELECT que responda la pregunta.\n\nReglas:\n- Dialecto SQLite. Nada de sintaxis de Postgres, MySQL ni T-SQL.\n- Solo lectura: SELECT o WITH. Nunca INSERT, UPDATE, DELETE, DROP, ALTER ni CREATE.\n- Devuelve únicamente el SQL. Sin explicación, sin comentarios, sin markdown, sin punto y coma final.",
+  "user_template": "Esquema de la base de datos:\n\n{schema}\n\nPregunta: {question}\n\nSQL:",
+  "records": [
+    {
+      "question_index": 1,
+      "question": "¿Cuánto vendieron en total Lennar y D.R. Horton juntos en su año fiscal 2024?",
+      "run": 1,
+      "sql": "SELECT\n  SUM(h.net_income) AS total_ventas\nFROM companies c\nJOIN financials h ON h.company_id = c.id\nWHERE c.name IN ('Lennar', 'D.R. Horton')\n  AND h.fiscal_year = 2024",
+      "raw": "SELECT\n  SUM(h.net_income) AS total_ventas\nFROM companies c\nJOIN financials h ON h.company_id = c.id\nWHERE c.name IN ('Lennar', 'D.R. Horton')\n  AND h.fiscal_year = 2024",
+      "model": "gpt-5.4-nano-2026-03-17",
+      "input_tokens": 376,
+      "output_tokens": 58,
+      "reasoning_tokens": 0,
+      "cost_usd": 0.00014769999999999999,
+      "result": {
+        "error": null,
+        "columns": [
+          "total_ventas"
+        ],
+        "rows": [
+          [
+            null
+          ]
+        ],
+        "row_count": 1,
+        "rows_truncated": false
+      }
+    },
+    {
+      "question_index": 1,
+      "question": "¿Cuánto vendieron en total Lennar y D.R. Horton juntos en su año fiscal 2024?",
+      "run": 2,
+      "sql": "SELECT\n  SUM(homes_delivered) AS total_homes_delivered\nFROM financials f\nJOIN companies c ON c.id = f.company_id\nWHERE c.name IN ('Lennar', 'D.R. Horton')\n  AND f.fiscal_year = 2024\n  AND f.homes_delivered IS NOT NULL",
+      "raw": "SELECT\n  SUM(homes_delivered) AS total_homes_delivered\nFROM financials f\nJOIN companies c ON c.id = f.company_id\nWHERE c.name IN ('Lennar', 'D.R. Horton')\n  AND f.fiscal_year = 2024\n  AND f.homes_delivered IS NOT NULL",
+      "model": "gpt-5.4-nano-2026-03-17",
+      "input_tokens": 376,
+      "output_tokens": 72,
+      "reasoning_tokens": 0,
+      "cost_usd": 0.00016519999999999998,
+      "result": {
+        "error": null,
+        "columns": [
+          "total_homes_delivered"
+        ],
+        "rows": [
+          [
+            null
+          ]
+        ],
+        "row_count": 1,
+        "rows_truncated": false
+      }
+    },
+    {
+      "question_index": 1,
+      "question": "¿Cuánto vendieron en total Lennar y D.R. Horton juntos en su año fiscal 2024?",
+      "run": 3,
+      "sql": "SELECT\n  SUM(h.sale_price) AS total_venta_2024\nFROM homes h\nJOIN communities c ON c.id = h.community_id\nJOIN companies co ON co.id = c.company_id\nJOIN financials f ON f.company_id = co.id\nWHERE co.name IN ('Lennar', 'D.R. Horton')\n  AND f.fiscal_year = 2024\n  AND h.status IN ('Sold', 'Closed')\n  AND h.sale_price IS NOT NULL",
+      "raw": "SELECT\n  SUM(h.sale_price) AS total_venta_2024\nFROM homes h\nJOIN communities c ON c.id = h.community_id\nJOIN companies co ON co.id = c.company_id\nJOIN financials f ON f.company_id = co.id\nWHERE co.name IN ('Lennar', 'D.R. Horton')\n  AND f.fiscal_year = 2024\n  AND h.status IN ('Sold', 'Closed')\n  AND h.sale_price IS NOT NULL",
+      "model": "gpt-5.4-nano-2026-03-17",
+      "input_tokens": 376,
+      "output_tokens": 103,
+      "reasoning_tokens": 0,
+      "cost_usd": 0.00020395,
+      "result": {
+        "error": null,
+        "columns": [
+          "total_venta_2024"
+        ],
+        "rows": [
+          [
+            null
+          ]
+        ],
+        "row_count": 1,
+        "rows_truncated": false
+      }
+    },
+    {
+      "question_index": 1,
+      "question": "¿Cuánto vendieron en total Lennar y D.R. Horton juntos en su año fiscal 2024?",
+      "run": 4,
+      "sql": "SELECT\n  SUM(CASE WHEN c.name IN ('Lennar', 'D.R. Horton') THEN f.homes_delivered ELSE 0 END) AS total_homes_delivered_2024\nFROM financials f\nJOIN companies c ON c.id = f.company_id\nWHERE f.fiscal_year = 2024\n  AND c.name IN ('Lennar', 'D.R. Horton')",
+      "raw": "SELECT\n  SUM(CASE WHEN c.name IN ('Lennar', 'D.R. Horton') THEN f.homes_delivered ELSE 0 END) AS total_homes_delivered_2024\nFROM financials f\nJOIN companies c ON c.id = f.company_id\nWHERE f.fiscal_year = 2024\n  AND c.name IN ('Lennar', 'D.R. Horton')",
+      "model": "gpt-5.4-nano-2026-03-17",
+      "input_tokens": 376,
+      "output_tokens": 88,
+      "reasoning_tokens": 0,
+      "cost_usd": 0.00018519999999999998,
+      "result": {
+        "error": null,
+        "columns": [
+          "total_homes_delivered_2024"
+        ],
+        "rows": [
+          [
+            null
+          ]
+        ],
+        "row_count": 1,
+        "rows_truncated": false
+      }
+    },
+    {
+      "question_index": 1,
+      "question": "¿Cuánto vendieron en total Lennar y D.R. Horton juntos en su año fiscal 2024?",
+      "run": 5,
+      "sql": "SELECT\n  SUM(homes_delivered) AS total_homes_vendidos\nFROM financials f\nJOIN companies c ON c.id = f.company_id\nWHERE f.fiscal_year = 2024\n  AND c.name IN ('Lennar', 'D.R. Horton')",
+      "raw": "SELECT\n  SUM(homes_delivered) AS total_homes_vendidos\nFROM financials f\nJOIN companies c ON c.id = f.company_id\nWHERE f.fiscal_year = 2024\n  AND c.name IN ('Lennar', 'D.R. Horton')",
+      "model": "gpt-5.4-nano-2026-03-17",
+      "input_tokens": 376,
+      "output_tokens": 62,
+      "reasoning_tokens": 0,
+      "cost_usd": 0.0001527,
+      "result": {
+        "error": null,
+        "columns": [
+          "total_homes_vendidos"
+        ],
+        "rows": [
+          [
+            null
+          ]
+        ],
+        "row_count": 1,
+        "rows_truncated": false
+      }
+    },
+    {
+      "question_index": 2,
+      "question": "¿Cuántas casas se han vendido en Texas?",
+      "run": 1,
+      "sql": "SELECT COUNT(*) AS sold_homes_count\nFROM homes h\nJOIN communities c ON c.id = h.community_id\nWHERE c.state = 'Texas'\n  AND h.status = 'Sold'",
+      "raw": "SELECT COUNT(*) AS sold_homes_count\nFROM homes h\nJOIN communities c ON c.id = h.community_id\nWHERE c.state = 'Texas'\n  AND h.status = 'Sold'",
+      "model": "gpt-5.4-nano-2026-03-17",
+      "input_tokens": 364,
+      "output_tokens": 43,
+      "reasoning_tokens": 0,
+      "cost_usd": 0.00012654999999999999,
+      "result": {
+        "error": null,
+        "columns": [
+          "sold_homes_count"
+        ],
+        "rows": [
+          [
+            0
+          ]
+        ],
+        "row_count": 1,
+        "rows_truncated": false
+      }
+    },
+    {
+      "question_index": 2,
+      "question": "¿Cuántas casas se han vendido en Texas?",
+      "run": 2,
+      "sql": "SELECT COUNT(*) AS sold_homes_texas\nFROM homes\nJOIN communities ON communities.id = homes.community_id\nWHERE communities.state = 'Texas'\n  AND homes.status = 'Sold'",
+      "raw": "SELECT COUNT(*) AS sold_homes_texas\nFROM homes\nJOIN communities ON communities.id = homes.community_id\nWHERE communities.state = 'Texas'\n  AND homes.status = 'Sold'",
+      "model": "gpt-5.4-nano-2026-03-17",
+      "input_tokens": 364,
+      "output_tokens": 42,
+      "reasoning_tokens": 0,
+      "cost_usd": 0.0001253,
+      "result": {
+        "error": null,
+        "columns": [
+          "sold_homes_texas"
+        ],
+        "rows": [
+          [
+            0
+          ]
+        ],
+        "row_count": 1,
+        "rows_truncated": false
+      }
+    },
+    {
+      "question_index": 2,
+      "question": "¿Cuántas casas se han vendido en Texas?",
+      "run": 3,
+      "sql": "SELECT COUNT(*) AS sold_houses_count\nFROM homes h\nJOIN communities c ON c.id = h.community_id\nWHERE c.state = 'Texas'\n  AND h.status = 'Sold'",
+      "raw": "SELECT COUNT(*) AS sold_houses_count\nFROM homes h\nJOIN communities c ON c.id = h.community_id\nWHERE c.state = 'Texas'\n  AND h.status = 'Sold'",
+      "model": "gpt-5.4-nano-2026-03-17",
+      "input_tokens": 364,
+      "output_tokens": 43,
+      "reasoning_tokens": 0,
+      "cost_usd": 0.00012654999999999999,
+      "result": {
+        "error": null,
+        "columns": [
+          "sold_houses_count"
+        ],
+        "rows": [
+          [
+            0
+          ]
+        ],
+        "row_count": 1,
+        "rows_truncated": false
+      }
+    },
+    {
+      "question_index": 2,
+      "question": "¿Cuántas casas se han vendido en Texas?",
+      "run": 4,
+      "sql": "SELECT COUNT(*) AS houses_sold\nFROM homes h\nJOIN communities c ON c.id = h.community_id\nWHERE c.state = 'Texas'\n  AND h.status = 'Sold'",
+      "raw": "SELECT COUNT(*) AS houses_sold\nFROM homes h\nJOIN communities c ON c.id = h.community_id\nWHERE c.state = 'Texas'\n  AND h.status = 'Sold'",
+      "model": "gpt-5.4-nano-2026-03-17",
+      "input_tokens": 364,
+      "output_tokens": 42,
+      "reasoning_tokens": 0,
+      "cost_usd": 0.0001253,
+      "result": {
+        "error": null,
+        "columns": [
+          "houses_sold"
+        ],
+        "rows": [
+          [
+            0
+          ]
+        ],
+        "row_count": 1,
+        "rows_truncated": false
+      }
+    },
+    {
+      "question_index": 2,
+      "question": "¿Cuántas casas se han vendido en Texas?",
+      "run": 5,
+      "sql": "SELECT COUNT(*) AS sold_houses\nFROM homes h\nJOIN communities c ON c.id = h.community_id\nWHERE c.state = 'Texas'\n  AND h.status = 'sold'",
+      "raw": "SELECT COUNT(*) AS sold_houses\nFROM homes h\nJOIN communities c ON c.id = h.community_id\nWHERE c.state = 'Texas'\n  AND h.status = 'sold'",
+      "model": "gpt-5.4-nano-2026-03-17",
+      "input_tokens": 364,
+      "output_tokens": 42,
+      "reasoning_tokens": 0,
+      "cost_usd": 0.0001253,
+      "result": {
+        "error": null,
+        "columns": [
+          "sold_houses"
+        ],
+        "rows": [
+          [
+            0
+          ]
+        ],
+        "row_count": 1,
+        "rows_truncated": false
+      }
+    },
+    {
+      "question_index": 3,
+      "question": "¿Precio promedio de venta de las casas cerradas en el año fiscal 2024 de Lennar?",
+      "run": 1,
+      "sql": "SELECT\n  AVG(h.sale_price) AS avg_sale_price\nFROM companies c\nJOIN communities com ON com.company_id = c.id\nJOIN homes h ON h.community_id = com.id\nJOIN financials f ON f.company_id = c.id\nWHERE c.name = 'Lennar'\n  AND f.fiscal_year = 2024\n  AND h.status = 'closed'\n  AND h.closing_date IS NOT NULL\n  AND strftime('%Y', h.closing_date) = '2024'",
+      "raw": "SELECT\n  AVG(h.sale_price) AS avg_sale_price\nFROM companies c\nJOIN communities com ON com.company_id = c.id\nJOIN homes h ON h.community_id = com.id\nJOIN financials f ON f.company_id = c.id\nWHERE c.name = 'Lennar'\n  AND f.fiscal_year = 2024\n  AND h.status = 'closed'\n  AND h.closing_date IS NOT NULL\n  AND strftime('%Y', h.closing_date) = '2024'",
+      "model": "gpt-5.4-nano-2026-03-17",
+      "input_tokens": 374,
+      "output_tokens": 110,
+      "reasoning_tokens": 0,
+      "cost_usd": 0.0002123,
+      "result": {
+        "error": null,
+        "columns": [
+          "avg_sale_price"
+        ],
+        "rows": [
+          [
+            null
+          ]
+        ],
+        "row_count": 1,
+        "rows_truncated": false
+      }
+    },
+    {
+      "question_index": 3,
+      "question": "¿Precio promedio de venta de las casas cerradas en el año fiscal 2024 de Lennar?",
+      "run": 2,
+      "sql": "SELECT AVG(h.sale_price) AS avg_sale_price\nFROM companies c\nJOIN communities com ON com.company_id = c.id\nJOIN homes h ON h.community_id = com.id\nJOIN financials f ON f.company_id = c.id\nWHERE c.name = 'Lennar'\n  AND f.fiscal_year = 2024\n  AND h.status = 'closed'\n  AND h.closing_date IS NOT NULL\n  AND h.sale_price IS NOT NULL",
+      "raw": "SELECT AVG(h.sale_price) AS avg_sale_price\nFROM companies c\nJOIN communities com ON com.company_id = c.id\nJOIN homes h ON h.community_id = com.id\nJOIN financials f ON f.company_id = c.id\nWHERE c.name = 'Lennar'\n  AND f.fiscal_year = 2024\n  AND h.status = 'closed'\n  AND h.closing_date IS NOT NULL\n  AND h.sale_price IS NOT NULL",
+      "model": "gpt-5.4-nano-2026-03-17",
+      "input_tokens": 374,
+      "output_tokens": 99,
+      "reasoning_tokens": 0,
+      "cost_usd": 0.00019855,
+      "result": {
+        "error": null,
+        "columns": [
+          "avg_sale_price"
+        ],
+        "rows": [
+          [
+            null
+          ]
+        ],
+        "row_count": 1,
+        "rows_truncated": false
+      }
+    },
+    {
+      "question_index": 3,
+      "question": "¿Precio promedio de venta de las casas cerradas en el año fiscal 2024 de Lennar?",
+      "run": 3,
+      "sql": "SELECT AVG(h.sale_price) AS avg_sale_price\nFROM companies c\nJOIN communities comm ON comm.company_id = c.id\nJOIN homes h ON h.community_id = comm.id\nJOIN financials f ON f.company_id = c.id\nWHERE c.name = 'Lennar'\n  AND f.fiscal_year = 2024\n  AND h.status = 'closed'\n  AND h.closing_date IS NOT NULL\n  AND h.sale_price IS NOT NULL",
+      "raw": "SELECT AVG(h.sale_price) AS avg_sale_price\nFROM companies c\nJOIN communities comm ON comm.company_id = c.id\nJOIN homes h ON h.community_id = comm.id\nJOIN financials f ON f.company_id = c.id\nWHERE c.name = 'Lennar'\n  AND f.fiscal_year = 2024\n  AND h.status = 'closed'\n  AND h.closing_date IS NOT NULL\n  AND h.sale_price IS NOT NULL",
+      "model": "gpt-5.4-nano-2026-03-17",
+      "input_tokens": 374,
+      "output_tokens": 99,
+      "reasoning_tokens": 0,
+      "cost_usd": 0.00019855,
+      "result": {
+        "error": null,
+        "columns": [
+          "avg_sale_price"
+        ],
+        "rows": [
+          [
+            null
+          ]
+        ],
+        "row_count": 1,
+        "rows_truncated": false
+      }
+    },
+    {
+      "question_index": 3,
+      "question": "¿Precio promedio de venta de las casas cerradas en el año fiscal 2024 de Lennar?",
+      "run": 4,
+      "sql": "SELECT\n  AVG(h.sale_price) AS avg_sale_price\nFROM companies c\nJOIN communities cm ON cm.company_id = c.id\nJOIN homes h ON h.community_id = cm.id\nJOIN financials f ON f.company_id = c.id\nWHERE c.name = 'Lennar'\n  AND f.fiscal_year = 2024\n  AND h.status = 'closed'\n  AND h.sale_price IS NOT NULL",
+      "raw": "SELECT\n  AVG(h.sale_price) AS avg_sale_price\nFROM companies c\nJOIN communities cm ON cm.company_id = c.id\nJOIN homes h ON h.community_id = cm.id\nJOIN financials f ON f.company_id = c.id\nWHERE c.name = 'Lennar'\n  AND f.fiscal_year = 2024\n  AND h.status = 'closed'\n  AND h.sale_price IS NOT NULL",
+      "model": "gpt-5.4-nano-2026-03-17",
+      "input_tokens": 374,
+      "output_tokens": 91,
+      "reasoning_tokens": 0,
+      "cost_usd": 0.00018855,
+      "result": {
+        "error": null,
+        "columns": [
+          "avg_sale_price"
+        ],
+        "rows": [
+          [
+            null
+          ]
+        ],
+        "row_count": 1,
+        "rows_truncated": false
+      }
+    },
+    {
+      "question_index": 3,
+      "question": "¿Precio promedio de venta de las casas cerradas en el año fiscal 2024 de Lennar?",
+      "run": 5,
+      "sql": "SELECT AVG(h.sale_price) AS avg_sale_price_closed\nFROM companies c\nJOIN communities cm ON cm.company_id = c.id\nJOIN homes h ON h.community_id = cm.id\nJOIN financials f ON f.company_id = c.id\nWHERE c.name = 'Lennar'\n  AND f.fiscal_year = 2024\n  AND h.status = 'Closed'\n  AND h.sale_price IS NOT NULL",
+      "raw": "SELECT AVG(h.sale_price) AS avg_sale_price_closed\nFROM companies c\nJOIN communities cm ON cm.company_id = c.id\nJOIN homes h ON h.community_id = cm.id\nJOIN financials f ON f.company_id = c.id\nWHERE c.name = 'Lennar'\n  AND f.fiscal_year = 2024\n  AND h.status = 'Closed'\n  AND h.sale_price IS NOT NULL",
+      "model": "gpt-5.4-nano-2026-03-17",
+      "input_tokens": 374,
+      "output_tokens": 90,
+      "reasoning_tokens": 0,
+      "cost_usd": 0.0001873,
+      "result": {
+        "error": null,
+        "columns": [
+          "avg_sale_price_closed"
+        ],
+        "rows": [
+          [
+            null
+          ]
+        ],
+        "row_count": 1,
+        "rows_truncated": false
+      }
+    },
+    {
+      "question_index": 4,
+      "question": "¿Presupuesto total de las comunidades de D.R. Horton y cuántas casas tienen?",
+      "run": 1,
+      "sql": "WITH dr_horton AS (\n  SELECT id\n  FROM companies\n  WHERE name = 'D.R. Horton' OR ticker = 'D.R. Horton'\n),\ncommunity_budget AS (\n  SELECT\n    SUM(c.budget_usd) AS total_budget_usd,\n    COUNT(h.id) AS total_houses\n  FROM communities c\n  JOIN dr_horton d ON d.id = c.company_id\n  LEFT JOIN homes h ON h.community_id = c.id\n)\nSELECT total_budget_usd, total_houses\nFROM community_budget",
+      "raw": "WITH dr_horton AS (\n  SELECT id\n  FROM companies\n  WHERE name = 'D.R. Horton' OR ticker = 'D.R. Horton'\n),\ncommunity_budget AS (\n  SELECT\n    SUM(c.budget_usd) AS total_budget_usd,\n    COUNT(h.id) AS total_houses\n  FROM communities c\n  JOIN dr_horton d ON d.id = c.company_id\n  LEFT JOIN homes h ON h.community_id = c.id\n)\nSELECT total_budget_usd, total_houses\nFROM community_budget",
+      "model": "gpt-5.4-nano-2026-03-17",
+      "input_tokens": 372,
+      "output_tokens": 115,
+      "reasoning_tokens": 0,
+      "cost_usd": 0.00021815000000000002,
+      "result": {
+        "error": null,
+        "columns": [
+          "total_budget_usd",
+          "total_houses"
+        ],
+        "rows": [
+          [
+            null,
+            0
+          ]
+        ],
+        "row_count": 1,
+        "rows_truncated": false
+      }
+    },
+    {
+      "question_index": 4,
+      "question": "¿Presupuesto total de las comunidades de D.R. Horton y cuántas casas tienen?",
+      "run": 2,
+      "sql": "SELECT\n  c.budget_total_usd AS presupuesto_total_usd,\n  c.homes_total AS casas_totales\nFROM (\n  SELECT\n    SUM(comm.budget_usd) AS budget_total_usd,\n    COUNT(h.id) AS homes_total\n  FROM companies co\n  JOIN communities comm ON comm.company_id = co.id\n  LEFT JOIN homes h ON h.community_id = comm.id\n  WHERE co.name = 'D.R. Horton'\n) c",
+      "raw": "SELECT\n  c.budget_total_usd AS presupuesto_total_usd,\n  c.homes_total AS casas_totales\nFROM (\n  SELECT\n    SUM(comm.budget_usd) AS budget_total_usd,\n    COUNT(h.id) AS homes_total\n  FROM companies co\n  JOIN communities comm ON comm.company_id = co.id\n  LEFT JOIN homes h ON h.community_id = comm.id\n  WHERE co.name = 'D.R. Horton'\n) c",
+      "model": "gpt-5.4-nano-2026-03-17",
+      "input_tokens": 372,
+      "output_tokens": 100,
+      "reasoning_tokens": 0,
+      "cost_usd": 0.0001994,
+      "result": {
+        "error": null,
+        "columns": [
+          "presupuesto_total_usd",
+          "casas_totales"
+        ],
+        "rows": [
+          [
+            null,
+            0
+          ]
+        ],
+        "row_count": 1,
+        "rows_truncated": false
+      }
+    },
+    {
+      "question_index": 4,
+      "question": "¿Presupuesto total de las comunidades de D.R. Horton y cuántas casas tienen?",
+      "run": 3,
+      "sql": "SELECT\n  SUM(c.budget_usd) AS total_budget_usd,\n  COUNT(h.id) AS total_homes\nFROM companies co\nJOIN communities c ON c.company_id = co.id\nLEFT JOIN homes h ON h.community_id = c.id\nWHERE co.name = 'D.R. Horton' OR co.ticker = 'D.R. Horton'",
+      "raw": "SELECT\n  SUM(c.budget_usd) AS total_budget_usd,\n  COUNT(h.id) AS total_homes\nFROM companies co\nJOIN communities c ON c.company_id = co.id\nLEFT JOIN homes h ON h.community_id = c.id\nWHERE co.name = 'D.R. Horton' OR co.ticker = 'D.R. Horton'",
+      "model": "gpt-5.4-nano-2026-03-17",
+      "input_tokens": 372,
+      "output_tokens": 78,
+      "reasoning_tokens": 0,
+      "cost_usd": 0.0001719,
+      "result": {
+        "error": null,
+        "columns": [
+          "total_budget_usd",
+          "total_homes"
+        ],
+        "rows": [
+          [
+            null,
+            0
+          ]
+        ],
+        "row_count": 1,
+        "rows_truncated": false
+      }
+    },
+    {
+      "question_index": 4,
+      "question": "¿Presupuesto total de las comunidades de D.R. Horton y cuántas casas tienen?",
+      "run": 4,
+      "sql": "SELECT\n  c.company_id,\n  SUM(c.budget_usd) AS total_presupuesto_usd,\n  COUNT(h.id) AS total_casas\nFROM companies co\nJOIN communities c ON c.company_id = co.id\nLEFT JOIN homes h ON h.community_id = c.id\nWHERE co.name = 'D.R. Horton'\nGROUP BY c.company_id",
+      "raw": "SELECT\n  c.company_id,\n  SUM(c.budget_usd) AS total_presupuesto_usd,\n  COUNT(h.id) AS total_casas\nFROM companies co\nJOIN communities c ON c.company_id = co.id\nLEFT JOIN homes h ON h.community_id = c.id\nWHERE co.name = 'D.R. Horton'\nGROUP BY c.company_id",
+      "model": "gpt-5.4-nano-2026-03-17",
+      "input_tokens": 372,
+      "output_tokens": 78,
+      "reasoning_tokens": 0,
+      "cost_usd": 0.0001719,
+      "result": {
+        "error": null,
+        "columns": [
+          "company_id",
+          "total_presupuesto_usd",
+          "total_casas"
+        ],
+        "rows": [],
+        "row_count": 0,
+        "rows_truncated": false
+      }
+    },
+    {
+      "question_index": 4,
+      "question": "¿Presupuesto total de las comunidades de D.R. Horton y cuántas casas tienen?",
+      "run": 5,
+      "sql": "SELECT\n  SUM(c.budget_usd) AS total_presupuesto_usd,\n  COUNT(h.id) AS total_casas\nFROM companies co\nJOIN communities c ON c.company_id = co.id\nLEFT JOIN homes h ON h.community_id = c.id\nWHERE co.name = 'D.R. Horton'",
+      "raw": "SELECT\n  SUM(c.budget_usd) AS total_presupuesto_usd,\n  COUNT(h.id) AS total_casas\nFROM companies co\nJOIN communities c ON c.company_id = co.id\nLEFT JOIN homes h ON h.community_id = c.id\nWHERE co.name = 'D.R. Horton'",
+      "model": "gpt-5.4-nano-2026-03-17",
+      "input_tokens": 372,
+      "output_tokens": 68,
+      "reasoning_tokens": 0,
+      "cost_usd": 0.0001594,
+      "result": {
+        "error": null,
+        "columns": [
+          "total_presupuesto_usd",
+          "total_casas"
+        ],
+        "rows": [
+          [
+            null,
+            0
+          ]
+        ],
+        "row_count": 1,
+        "rows_truncated": false
+      }
+    },
+    {
+      "question_index": 5,
+      "question": "¿Cuántas casas tiene cada compañía en backlog y cuál es su valor?",
+      "run": 1,
+      "sql": "SELECT\n  c.id AS company_id,\n  c.name AS company_name,\n  c.ticker,\n  f.fiscal_year,\n  f.homes_delivered AS houses_in_backlog,\n  f.backlog_value\nFROM companies c\nJOIN financials f\n  ON f.company_id = c.id\nWHERE f.homes_delivered IS NOT NULL\n  AND f.backlog_value IS NOT NULL\nORDER BY c.id, f.fiscal_year",
+      "raw": "SELECT\n  c.id AS company_id,\n  c.name AS company_name,\n  c.ticker,\n  f.fiscal_year,\n  f.homes_delivered AS houses_in_backlog,\n  f.backlog_value\nFROM companies c\nJOIN financials f\n  ON f.company_id = c.id\nWHERE f.homes_delivered IS NOT NULL\n  AND f.backlog_value IS NOT NULL\nORDER BY c.id, f.fiscal_year",
+      "model": "gpt-5.4-nano-2026-03-17",
+      "input_tokens": 369,
+      "output_tokens": 96,
+      "reasoning_tokens": 0,
+      "cost_usd": 0.00019380000000000002,
+      "result": {
+        "error": null,
+        "columns": [
+          "company_id",
+          "company_name",
+          "ticker",
+          "fiscal_year",
+          "houses_in_backlog",
+          "backlog_value"
+        ],
+        "rows": [
+          [
+            1,
+            "Lennar Corporation",
+            "LEN",
+            2023,
+            73087,
+            6633750.0
+          ],
+          [
+            1,
+            "Lennar Corporation",
+            "LEN",
+            2024,
+            80210,
+            5372784.0
+          ],
+          [
+            2,
+            "D.R. Horton, Inc.",
+            "DHI",
+            2023,
+            82917,
+            5923.3
+          ],
+          [
+            2,
+            "D.R. Horton, Inc.",
+            "DHI",
+            2024,
+            89690,
+            4770.3
+          ]
+        ],
+        "row_count": 4,
+        "rows_truncated": false
+      }
+    },
+    {
+      "question_index": 5,
+      "question": "¿Cuántas casas tiene cada compañía en backlog y cuál es su valor?",
+      "run": 2,
+      "sql": "SELECT\n  c.id AS company_id,\n  c.name AS company_name,\n  f.fiscal_year AS fiscal_year,\n  f.homes_delivered AS backlog_homes,\n  f.backlog_value AS backlog_value\nFROM companies c\nJOIN financials f\n  ON f.company_id = c.id\nORDER BY c.id, f.fiscal_year",
+      "raw": "SELECT\n  c.id AS company_id,\n  c.name AS company_name,\n  f.fiscal_year AS fiscal_year,\n  f.homes_delivered AS backlog_homes,\n  f.backlog_value AS backlog_value\nFROM companies c\nJOIN financials f\n  ON f.company_id = c.id\nORDER BY c.id, f.fiscal_year",
+      "model": "gpt-5.4-nano-2026-03-17",
+      "input_tokens": 369,
+      "output_tokens": 76,
+      "reasoning_tokens": 0,
+      "cost_usd": 0.0001688,
+      "result": {
+        "error": null,
+        "columns": [
+          "company_id",
+          "company_name",
+          "fiscal_year",
+          "backlog_homes",
+          "backlog_value"
+        ],
+        "rows": [
+          [
+            1,
+            "Lennar Corporation",
+            2023,
+            73087,
+            6633750.0
+          ],
+          [
+            1,
+            "Lennar Corporation",
+            2024,
+            80210,
+            5372784.0
+          ],
+          [
+            2,
+            "D.R. Horton, Inc.",
+            2023,
+            82917,
+            5923.3
+          ],
+          [
+            2,
+            "D.R. Horton, Inc.",
+            2024,
+            89690,
+            4770.3
+          ]
+        ],
+        "row_count": 4,
+        "rows_truncated": false
+      }
+    },
+    {
+      "question_index": 5,
+      "question": "¿Cuántas casas tiene cada compañía en backlog y cuál es su valor?",
+      "run": 3,
+      "sql": "SELECT\n  c.id AS company_id,\n  c.name AS company_name,\n  f.backlog_value AS backlog_value,\n  COUNT(h.id) AS houses_in_backlog\nFROM companies c\nJOIN communities cm\n  ON cm.company_id = c.id\nJOIN homes h\n  ON h.community_id = cm.id\nJOIN financials f\n  ON f.company_id = c.id\nWHERE LOWER(h.status) IN ('backlog', 'in backlog')\nGROUP BY c.id, c.name, f.backlog_value",
+      "raw": "SELECT\n  c.id AS company_id,\n  c.name AS company_name,\n  f.backlog_value AS backlog_value,\n  COUNT(h.id) AS houses_in_backlog\nFROM companies c\nJOIN communities cm\n  ON cm.company_id = c.id\nJOIN homes h\n  ON h.community_id = cm.id\nJOIN financials f\n  ON f.company_id = c.id\nWHERE LOWER(h.status) IN ('backlog', 'in backlog')\nGROUP BY c.id, c.name, f.backlog_value",
+      "model": "gpt-5.4-nano-2026-03-17",
+      "input_tokens": 369,
+      "output_tokens": 110,
+      "reasoning_tokens": 0,
+      "cost_usd": 0.0002113,
+      "result": {
+        "error": null,
+        "columns": [
+          "company_id",
+          "company_name",
+          "backlog_value",
+          "houses_in_backlog"
+        ],
+        "rows": [
+          [
+            1,
+            "Lennar Corporation",
+            5372784.0,
+            51
+          ],
+          [
+            1,
+            "Lennar Corporation",
+            6633750.0,
+            51
+          ],
+          [
+            2,
+            "D.R. Horton, Inc.",
+            4770.3,
+            52
+          ],
+          [
+            2,
+            "D.R. Horton, Inc.",
+            5923.3,
+            52
+          ]
+        ],
+        "row_count": 4,
+        "rows_truncated": false
+      }
+    },
+    {
+      "question_index": 5,
+      "question": "¿Cuántas casas tiene cada compañía en backlog y cuál es su valor?",
+      "run": 4,
+      "sql": "SELECT\n  c.name AS company_name,\n  COUNT(h.id) AS houses_in_backlog,\n  SUM(f.backlog_value) AS total_backlog_value\nFROM companies c\nJOIN communities com ON com.company_id = c.id\nJOIN homes h ON h.community_id = com.id\nLEFT JOIN financials f ON f.company_id = c.id\nWHERE h.status = 'Backlog'\nGROUP BY c.id, c.name",
+      "raw": "SELECT\n  c.name AS company_name,\n  COUNT(h.id) AS houses_in_backlog,\n  SUM(f.backlog_value) AS total_backlog_value\nFROM companies c\nJOIN communities com ON com.company_id = c.id\nJOIN homes h ON h.community_id = com.id\nLEFT JOIN financials f ON f.company_id = c.id\nWHERE h.status = 'Backlog'\nGROUP BY c.id, c.name",
+      "model": "gpt-5.4-nano-2026-03-17",
+      "input_tokens": 369,
+      "output_tokens": 91,
+      "reasoning_tokens": 0,
+      "cost_usd": 0.00018755,
+      "result": {
+        "error": null,
+        "columns": [
+          "company_name",
+          "houses_in_backlog",
+          "total_backlog_value"
+        ],
+        "rows": [],
+        "row_count": 0,
+        "rows_truncated": false
+      }
+    },
+    {
+      "question_index": 5,
+      "question": "¿Cuántas casas tiene cada compañía en backlog y cuál es su valor?",
+      "run": 5,
+      "sql": "SELECT\n  c.id AS company_id,\n  c.name AS company_name,\n  SUM(CASE WHEN h.status = 'Backlog' THEN 1 ELSE 0 END) AS homes_in_backlog,\n  f.backlog_value AS backlog_value\nFROM companies c\nJOIN communities cm ON cm.company_id = c.id\nJOIN homes h ON h.community_id = cm.id\nJOIN financials f ON f.company_id = c.id\nGROUP BY c.id, c.name, f.backlog_value",
+      "raw": "SELECT\n  c.id AS company_id,\n  c.name AS company_name,\n  SUM(CASE WHEN h.status = 'Backlog' THEN 1 ELSE 0 END) AS homes_in_backlog,\n  f.backlog_value AS backlog_value\nFROM companies c\nJOIN communities cm ON cm.company_id = c.id\nJOIN homes h ON h.community_id = cm.id\nJOIN financials f ON f.company_id = c.id\nGROUP BY c.id, c.name, f.backlog_value",
+      "model": "gpt-5.4-nano-2026-03-17",
+      "input_tokens": 369,
+      "output_tokens": 105,
+      "reasoning_tokens": 0,
+      "cost_usd": 0.00020505000000000002,
+      "result": {
+        "error": null,
+        "columns": [
+          "company_id",
+          "company_name",
+          "homes_in_backlog",
+          "backlog_value"
+        ],
+        "rows": [
+          [
+            1,
+            "Lennar Corporation",
+            0,
+            5372784.0
+          ],
+          [
+            1,
+            "Lennar Corporation",
+            0,
+            6633750.0
+          ],
+          [
+            2,
+            "D.R. Horton, Inc.",
+            0,
+            4770.3
+          ],
+          [
+            2,
+            "D.R. Horton, Inc.",
+            0,
+            5923.3
+          ]
+        ],
+        "row_count": 4,
+        "rows_truncated": false
+      }
+    }
+  ]
+}

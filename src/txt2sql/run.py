@@ -2,6 +2,7 @@
 
     uv run txt2sql "cuantas casas se cerraron en Texas"
     uv run txt2sql --schema          # vuelca el esquema, sin llamar al modelo
+    uv run txt2sql --schema --values # el esquema con los valores inyectados
 
 Imprime el SQL que generó el modelo, el resultado de correrlo, y lo que costó
 la llamada. El costo se imprime siempre: es regla del proyecto no correr nada
@@ -63,6 +64,14 @@ def main() -> int:
         help="vuelca el esquema que se le manda al modelo y sale, sin llamar a la API",
     )
     parser.add_argument(
+        "--values",
+        action="store_true",
+        help=(
+            "anexa al esquema los valores distintos de las columnas de texto con"
+            f" {schema_mod.MAX_CARDINALITY} o menos (rebanada 2)"
+        ),
+    )
+    parser.add_argument(
         "--model",
         default=None,
         help=f"modelo a usar (default: {generate.model_name()})",
@@ -77,7 +86,7 @@ def main() -> int:
         print(exc, file=sys.stderr)
         return 1
 
-    schema_text = schema_mod.dump_schema(conn)
+    schema_text = schema_mod.dump_schema(conn, with_values=args.values)
 
     if args.schema:
         print(schema_text)
