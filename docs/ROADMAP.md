@@ -147,6 +147,134 @@ también mataría consultas legítimas —un `SUM(DISTINCT)` o una subconsulta b
 armada— y la rebanada 2 ya mostró que este sistema tiene bastantes formas de
 tener razón como para no estrangularlas de entrada.
 
+### Etapa 1 de 4: congelar el corpus
+
+Predicciones escritas **antes** de abrir `evals/runs/*.json`, para poder medir
+después qué tan mal calibrado estaba el estimador.
+
+Honestidad sobre la primera: **no es ciega.** Este mismo documento la filtra. La
+línea de la validación de esquema dice "55 llamadas medidas" y la tabla de
+fan-out reporta "5 de 5" corridas por pregunta, de donde el total sale por
+aritmética: 5 preguntas × 5 corridas × 2 configs = 50 en `runs/`, más las 5 de la
+línea base que viven en `results/`, y no en `runs/`. Las otras dos sí son ciegas:
+nada en el ROADMAP dice cuánto colapsa el dedupe ni qué fracción parsea.
+
+| # | Cantidad | Predicción | Rango | ¿Ciega? |
+|---|---|---|---|---|
+| 1 | SQL totales en `evals/runs/*.json` | **50** | 50 exacto | No, derivada del ROADMAP |
+| 2 | Distintos tras dedupe por string con whitespace normalizado | **32** | 24–40 | Sí |
+| 3 | De esos distintos, los que `sqlglot` parsea sin excepción | **32** (100%) | 30–32 | Sí |
+
+Razonamiento de la #2: las dos puertas de fan-out pegaron "5 de 5", así que la
+*forma* del query es muy estable dentro de cada pregunta. Pero identidad de
+string exacto es más frágil que identidad de forma: alias, saltos de línea y
+orden de columnas se mueven con el muestreo. Estimo 2–4 strings distintos por
+cada par (pregunta, config), o sea ~3 × 5 × 2 ≈ 32.
+
+Razonamiento de la #3: SQL generado por un modelo sobre un esquema de cuatro
+tablas casi siempre es sintácticamente válido; el error de sintaxis no es el modo
+de falla de este sistema, el grano de la agregación sí. El único camino realista
+a una excepción es basura de formato que haya sobrevivido al pipeline —una cerca
+de markdown, un prefacio en prosa— y eso sería un hallazgo sobre `generate.py`,
+no sobre el modelo. Si fallan más de dos, el bug está en la extracción.
+
+#### Resultado de las predicciones
+
+Las predicciones de arriba no se editan. Esto es lo que salió.
+
+| # | Predicción | Real | |
+|---|---|---|---|
+| 1 | 50 | **50** | acertada, pero no era ciega |
+| 2 | 32 (rango 24–40) | **49** | **fallada, fuera de rango** |
+| 3 | 32 de 32 (100%) | **49 de 49 (100%)** | acertada en tasa |
+
+La #2 falló por el lado interesante: el estimador supuso que el string exacto
+colapsaría ~36% del corpus y colapsó **1 de 50**. Y el número ya estaba medido en
+este mismo documento, en "Agrupar por string exacto de SQL no sirve" —25/25
+distintos en la config A, 24/25 en la B— así que la predicción no solo falló, falló
+contra evidencia que el repo ya tenía escrita.
+
+Dato nuevo que la rebanada 2 no había medido: **normalizar whitespace no colapsa
+nada.** El único grupo repetido del corpus (id 32, config B, Q2, corridas 2 y 3)
+es un duplicado byte-idéntico; su flag `whitespace_variants` es `false`. La
+normalización de la llave de dedupe es, sobre este corpus, un no-op exacto.
+
+Consecuencia operativa: **la worksheet de etiquetado va a tener 49 filas del
+corpus de corridas, no ~32.** El dedupe por string no ahorra trabajo de
+clasificación y no hay que presupuestarlo como si lo hiciera.
+
+#### El corpus se queda en las corridas: la línea base no entra
+
+`evals/results/baseline_ddl_only.md` **es evidencia, no fuente de datos.** No se
+parsea. Las 5 llamadas de la línea base viven ahí como bloques de markdown y no
+entran al corpus: son un archivo de resultados congelado, y además corrieron con
+otra variable de esquema, así que fusionarlas ensuciaría la procedencia de cada
+entrada.
+
+Por eso el corpus tiene **50 crudos y 49 distintos**, no 55. La diferencia entre
+"55 llamadas medidas" y "50 en el corpus" es exactamente la línea base.
+
+#### Las worksheets se mueven a la etapa 1b
+
+Las worksheets **no se generan en la etapa 1.** Viene una etapa 1b con un set de
+SQL adversario escrito a mano, en su propio archivo `corpus_sql_adversarial.json`,
+y las worksheets se generan **una sola vez** de la unión de los dos archivos.
+
+La razón es el protocolo de archivos congelados: si la worksheet se generara ahora
+y el corpus adversario llegara después, habría que editar un archivo congelado o
+mantener dos worksheets desalineadas. Generarla una vez de la unión evita las dos
+cosas.
+
+**El protocolo no cambia: worksheets y etiquetas se commitean ANTES de que exista
+una sola línea del detector.** Solo se mueven una etapa adelante. El orden es lo
+que impide que el detector se escriba primero y las etiquetas se acomoden después
+para que salga bien.
+
+#### Los cinco veredictos
+
+**`no_rows`** — la query devolvió 0 filas. El multiplicador es **indefinido
+(0/0), no 1.0**.
+
+Nunca se reporta `shape_no_inflation` sobre una query sin filas. **"Estaba rota por
+otra razón" y "no hubo inflación" son hechos distintos y no se colapsan.** Una
+query que no devuelve nada no es evidencia de que la detección de fan-out
+funcionó; es evidencia de que no hubo nada que medir. Colapsarlas convertiría un
+caso sin información en un acierto del detector.
+
+Esto salió de la pregunta sobre el alcance del corpus: al revisar de dónde salían
+las 49 entradas apareció que dos de ellas devolvieron 0 filas, y que el diseño no
+tenía dónde ponerlas.
+
+Cuántas son, medido sobre el corpus (el dato sale de `result.row_count` en los
+JSON de corridas, no se recalculó corriendo nada):
+
+| | |
+|---|---|
+| Distintos que devolvieron 0 filas | **2 de 49** — ids 19 y 24 |
+| Procedencia | ambos `ddl_only`, Q4 corrida 4 y Q5 corrida 4 |
+| Distintos con >0 filas | 47 |
+| Con error de sqlite | 0 |
+| Mismo SQL con conteos distintos entre corridas | 0 |
+
+Los otros cuatro veredictos **no están especificados todavía.** Ver "Pendiente de
+especificar" abajo: de los cinco solo están nombrados `no_rows` y
+`shape_no_inflation`, y este documento no va a inventar los otros tres.
+
+#### Pendiente de especificar
+
+Cosas que la etapa 1 necesitaba y que no llegaron. Se listan aquí para que la
+ausencia sea visible en el repo en lugar de silenciosa:
+
+- **Los nombres y definiciones de cuatro de los cinco veredictos.** Solo hay
+  `no_rows` (definido arriba) y `shape_no_inflation` (nombrado, no definido).
+  Sin el vocabulario completo no se puede etiquetar, y por eso no importa
+  todavía: las worksheets se mueven a la 1b.
+- **El alcance de v1 del detector.** Qué reporta, qué no, y dónde se corta.
+- **Las etapas 2, 3 y 4.** La etapa 1 se identificó como "1 de 4" pero las otras
+  tres no están escritas.
+- **El formato de la worksheet ciega**: qué columnas lleva y qué se le oculta al
+  etiquetador. Es de la 1b, pero conviene decidirlo antes de llegar ahí.
+
 ### Dependencia congelada: sqlglot 30.14.0
 
 | | |

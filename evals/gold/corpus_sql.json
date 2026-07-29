@@ -1,0 +1,754 @@
+{
+  "generated": "2026-07-29",
+  "source_files": [
+    "ddl_only_n5.json",
+    "values_text_maxcard20_n5.json"
+  ],
+  "dedupe": "string exacto sobre whitespace normalizado (' '.join(sql.split()))",
+  "total_sql": 50,
+  "distinct_sql": 49,
+  "entries": [
+    {
+      "id": 1,
+      "sql": "SELECT\n  SUM(h.net_income) AS total_ventas\nFROM companies c\nJOIN financials h ON h.company_id = c.id\nWHERE c.name IN ('Lennar', 'D.R. Horton')\n  AND h.fiscal_year = 2024",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "ddl_only_n5.json",
+          "config": "ddl_only",
+          "question_index": 1,
+          "question": "¿Cuánto vendieron en total Lennar y D.R. Horton juntos en su año fiscal 2024?",
+          "run": 1
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "sql": "SELECT\n  SUM(homes_delivered) AS total_homes_delivered\nFROM financials f\nJOIN companies c ON c.id = f.company_id\nWHERE c.name IN ('Lennar', 'D.R. Horton')\n  AND f.fiscal_year = 2024\n  AND f.homes_delivered IS NOT NULL",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "ddl_only_n5.json",
+          "config": "ddl_only",
+          "question_index": 1,
+          "question": "¿Cuánto vendieron en total Lennar y D.R. Horton juntos en su año fiscal 2024?",
+          "run": 2
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "sql": "SELECT\n  SUM(h.sale_price) AS total_venta_2024\nFROM homes h\nJOIN communities c ON c.id = h.community_id\nJOIN companies co ON co.id = c.company_id\nJOIN financials f ON f.company_id = co.id\nWHERE co.name IN ('Lennar', 'D.R. Horton')\n  AND f.fiscal_year = 2024\n  AND h.status IN ('Sold', 'Closed')\n  AND h.sale_price IS NOT NULL",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "ddl_only_n5.json",
+          "config": "ddl_only",
+          "question_index": 1,
+          "question": "¿Cuánto vendieron en total Lennar y D.R. Horton juntos en su año fiscal 2024?",
+          "run": 3
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "sql": "SELECT\n  SUM(CASE WHEN c.name IN ('Lennar', 'D.R. Horton') THEN f.homes_delivered ELSE 0 END) AS total_homes_delivered_2024\nFROM financials f\nJOIN companies c ON c.id = f.company_id\nWHERE f.fiscal_year = 2024\n  AND c.name IN ('Lennar', 'D.R. Horton')",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "ddl_only_n5.json",
+          "config": "ddl_only",
+          "question_index": 1,
+          "question": "¿Cuánto vendieron en total Lennar y D.R. Horton juntos en su año fiscal 2024?",
+          "run": 4
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "sql": "SELECT\n  SUM(homes_delivered) AS total_homes_vendidos\nFROM financials f\nJOIN companies c ON c.id = f.company_id\nWHERE f.fiscal_year = 2024\n  AND c.name IN ('Lennar', 'D.R. Horton')",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "ddl_only_n5.json",
+          "config": "ddl_only",
+          "question_index": 1,
+          "question": "¿Cuánto vendieron en total Lennar y D.R. Horton juntos en su año fiscal 2024?",
+          "run": 5
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "sql": "SELECT COUNT(*) AS sold_homes_count\nFROM homes h\nJOIN communities c ON c.id = h.community_id\nWHERE c.state = 'Texas'\n  AND h.status = 'Sold'",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "ddl_only_n5.json",
+          "config": "ddl_only",
+          "question_index": 2,
+          "question": "¿Cuántas casas se han vendido en Texas?",
+          "run": 1
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "sql": "SELECT COUNT(*) AS sold_homes_texas\nFROM homes\nJOIN communities ON communities.id = homes.community_id\nWHERE communities.state = 'Texas'\n  AND homes.status = 'Sold'",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "ddl_only_n5.json",
+          "config": "ddl_only",
+          "question_index": 2,
+          "question": "¿Cuántas casas se han vendido en Texas?",
+          "run": 2
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "sql": "SELECT COUNT(*) AS sold_houses_count\nFROM homes h\nJOIN communities c ON c.id = h.community_id\nWHERE c.state = 'Texas'\n  AND h.status = 'Sold'",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "ddl_only_n5.json",
+          "config": "ddl_only",
+          "question_index": 2,
+          "question": "¿Cuántas casas se han vendido en Texas?",
+          "run": 3
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "sql": "SELECT COUNT(*) AS houses_sold\nFROM homes h\nJOIN communities c ON c.id = h.community_id\nWHERE c.state = 'Texas'\n  AND h.status = 'Sold'",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "ddl_only_n5.json",
+          "config": "ddl_only",
+          "question_index": 2,
+          "question": "¿Cuántas casas se han vendido en Texas?",
+          "run": 4
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "sql": "SELECT COUNT(*) AS sold_houses\nFROM homes h\nJOIN communities c ON c.id = h.community_id\nWHERE c.state = 'Texas'\n  AND h.status = 'sold'",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "ddl_only_n5.json",
+          "config": "ddl_only",
+          "question_index": 2,
+          "question": "¿Cuántas casas se han vendido en Texas?",
+          "run": 5
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "sql": "SELECT\n  AVG(h.sale_price) AS avg_sale_price\nFROM companies c\nJOIN communities com ON com.company_id = c.id\nJOIN homes h ON h.community_id = com.id\nJOIN financials f ON f.company_id = c.id\nWHERE c.name = 'Lennar'\n  AND f.fiscal_year = 2024\n  AND h.status = 'closed'\n  AND h.closing_date IS NOT NULL\n  AND strftime('%Y', h.closing_date) = '2024'",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "ddl_only_n5.json",
+          "config": "ddl_only",
+          "question_index": 3,
+          "question": "¿Precio promedio de venta de las casas cerradas en el año fiscal 2024 de Lennar?",
+          "run": 1
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "sql": "SELECT AVG(h.sale_price) AS avg_sale_price\nFROM companies c\nJOIN communities com ON com.company_id = c.id\nJOIN homes h ON h.community_id = com.id\nJOIN financials f ON f.company_id = c.id\nWHERE c.name = 'Lennar'\n  AND f.fiscal_year = 2024\n  AND h.status = 'closed'\n  AND h.closing_date IS NOT NULL\n  AND h.sale_price IS NOT NULL",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "ddl_only_n5.json",
+          "config": "ddl_only",
+          "question_index": 3,
+          "question": "¿Precio promedio de venta de las casas cerradas en el año fiscal 2024 de Lennar?",
+          "run": 2
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "sql": "SELECT AVG(h.sale_price) AS avg_sale_price\nFROM companies c\nJOIN communities comm ON comm.company_id = c.id\nJOIN homes h ON h.community_id = comm.id\nJOIN financials f ON f.company_id = c.id\nWHERE c.name = 'Lennar'\n  AND f.fiscal_year = 2024\n  AND h.status = 'closed'\n  AND h.closing_date IS NOT NULL\n  AND h.sale_price IS NOT NULL",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "ddl_only_n5.json",
+          "config": "ddl_only",
+          "question_index": 3,
+          "question": "¿Precio promedio de venta de las casas cerradas en el año fiscal 2024 de Lennar?",
+          "run": 3
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "sql": "SELECT\n  AVG(h.sale_price) AS avg_sale_price\nFROM companies c\nJOIN communities cm ON cm.company_id = c.id\nJOIN homes h ON h.community_id = cm.id\nJOIN financials f ON f.company_id = c.id\nWHERE c.name = 'Lennar'\n  AND f.fiscal_year = 2024\n  AND h.status = 'closed'\n  AND h.sale_price IS NOT NULL",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "ddl_only_n5.json",
+          "config": "ddl_only",
+          "question_index": 3,
+          "question": "¿Precio promedio de venta de las casas cerradas en el año fiscal 2024 de Lennar?",
+          "run": 4
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "sql": "SELECT AVG(h.sale_price) AS avg_sale_price_closed\nFROM companies c\nJOIN communities cm ON cm.company_id = c.id\nJOIN homes h ON h.community_id = cm.id\nJOIN financials f ON f.company_id = c.id\nWHERE c.name = 'Lennar'\n  AND f.fiscal_year = 2024\n  AND h.status = 'Closed'\n  AND h.sale_price IS NOT NULL",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "ddl_only_n5.json",
+          "config": "ddl_only",
+          "question_index": 3,
+          "question": "¿Precio promedio de venta de las casas cerradas en el año fiscal 2024 de Lennar?",
+          "run": 5
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "sql": "WITH dr_horton AS (\n  SELECT id\n  FROM companies\n  WHERE name = 'D.R. Horton' OR ticker = 'D.R. Horton'\n),\ncommunity_budget AS (\n  SELECT\n    SUM(c.budget_usd) AS total_budget_usd,\n    COUNT(h.id) AS total_houses\n  FROM communities c\n  JOIN dr_horton d ON d.id = c.company_id\n  LEFT JOIN homes h ON h.community_id = c.id\n)\nSELECT total_budget_usd, total_houses\nFROM community_budget",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "ddl_only_n5.json",
+          "config": "ddl_only",
+          "question_index": 4,
+          "question": "¿Presupuesto total de las comunidades de D.R. Horton y cuántas casas tienen?",
+          "run": 1
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "sql": "SELECT\n  c.budget_total_usd AS presupuesto_total_usd,\n  c.homes_total AS casas_totales\nFROM (\n  SELECT\n    SUM(comm.budget_usd) AS budget_total_usd,\n    COUNT(h.id) AS homes_total\n  FROM companies co\n  JOIN communities comm ON comm.company_id = co.id\n  LEFT JOIN homes h ON h.community_id = comm.id\n  WHERE co.name = 'D.R. Horton'\n) c",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "ddl_only_n5.json",
+          "config": "ddl_only",
+          "question_index": 4,
+          "question": "¿Presupuesto total de las comunidades de D.R. Horton y cuántas casas tienen?",
+          "run": 2
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "sql": "SELECT\n  SUM(c.budget_usd) AS total_budget_usd,\n  COUNT(h.id) AS total_homes\nFROM companies co\nJOIN communities c ON c.company_id = co.id\nLEFT JOIN homes h ON h.community_id = c.id\nWHERE co.name = 'D.R. Horton' OR co.ticker = 'D.R. Horton'",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "ddl_only_n5.json",
+          "config": "ddl_only",
+          "question_index": 4,
+          "question": "¿Presupuesto total de las comunidades de D.R. Horton y cuántas casas tienen?",
+          "run": 3
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "sql": "SELECT\n  c.company_id,\n  SUM(c.budget_usd) AS total_presupuesto_usd,\n  COUNT(h.id) AS total_casas\nFROM companies co\nJOIN communities c ON c.company_id = co.id\nLEFT JOIN homes h ON h.community_id = c.id\nWHERE co.name = 'D.R. Horton'\nGROUP BY c.company_id",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "ddl_only_n5.json",
+          "config": "ddl_only",
+          "question_index": 4,
+          "question": "¿Presupuesto total de las comunidades de D.R. Horton y cuántas casas tienen?",
+          "run": 4
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "sql": "SELECT\n  SUM(c.budget_usd) AS total_presupuesto_usd,\n  COUNT(h.id) AS total_casas\nFROM companies co\nJOIN communities c ON c.company_id = co.id\nLEFT JOIN homes h ON h.community_id = c.id\nWHERE co.name = 'D.R. Horton'",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "ddl_only_n5.json",
+          "config": "ddl_only",
+          "question_index": 4,
+          "question": "¿Presupuesto total de las comunidades de D.R. Horton y cuántas casas tienen?",
+          "run": 5
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "sql": "SELECT\n  c.id AS company_id,\n  c.name AS company_name,\n  c.ticker,\n  f.fiscal_year,\n  f.homes_delivered AS houses_in_backlog,\n  f.backlog_value\nFROM companies c\nJOIN financials f\n  ON f.company_id = c.id\nWHERE f.homes_delivered IS NOT NULL\n  AND f.backlog_value IS NOT NULL\nORDER BY c.id, f.fiscal_year",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "ddl_only_n5.json",
+          "config": "ddl_only",
+          "question_index": 5,
+          "question": "¿Cuántas casas tiene cada compañía en backlog y cuál es su valor?",
+          "run": 1
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "sql": "SELECT\n  c.id AS company_id,\n  c.name AS company_name,\n  f.fiscal_year AS fiscal_year,\n  f.homes_delivered AS backlog_homes,\n  f.backlog_value AS backlog_value\nFROM companies c\nJOIN financials f\n  ON f.company_id = c.id\nORDER BY c.id, f.fiscal_year",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "ddl_only_n5.json",
+          "config": "ddl_only",
+          "question_index": 5,
+          "question": "¿Cuántas casas tiene cada compañía en backlog y cuál es su valor?",
+          "run": 2
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "sql": "SELECT\n  c.id AS company_id,\n  c.name AS company_name,\n  f.backlog_value AS backlog_value,\n  COUNT(h.id) AS houses_in_backlog\nFROM companies c\nJOIN communities cm\n  ON cm.company_id = c.id\nJOIN homes h\n  ON h.community_id = cm.id\nJOIN financials f\n  ON f.company_id = c.id\nWHERE LOWER(h.status) IN ('backlog', 'in backlog')\nGROUP BY c.id, c.name, f.backlog_value",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "ddl_only_n5.json",
+          "config": "ddl_only",
+          "question_index": 5,
+          "question": "¿Cuántas casas tiene cada compañía en backlog y cuál es su valor?",
+          "run": 3
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "sql": "SELECT\n  c.name AS company_name,\n  COUNT(h.id) AS houses_in_backlog,\n  SUM(f.backlog_value) AS total_backlog_value\nFROM companies c\nJOIN communities com ON com.company_id = c.id\nJOIN homes h ON h.community_id = com.id\nLEFT JOIN financials f ON f.company_id = c.id\nWHERE h.status = 'Backlog'\nGROUP BY c.id, c.name",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "ddl_only_n5.json",
+          "config": "ddl_only",
+          "question_index": 5,
+          "question": "¿Cuántas casas tiene cada compañía en backlog y cuál es su valor?",
+          "run": 4
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "sql": "SELECT\n  c.id AS company_id,\n  c.name AS company_name,\n  SUM(CASE WHEN h.status = 'Backlog' THEN 1 ELSE 0 END) AS homes_in_backlog,\n  f.backlog_value AS backlog_value\nFROM companies c\nJOIN communities cm ON cm.company_id = c.id\nJOIN homes h ON h.community_id = cm.id\nJOIN financials f ON f.company_id = c.id\nGROUP BY c.id, c.name, f.backlog_value",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "ddl_only_n5.json",
+          "config": "ddl_only",
+          "question_index": 5,
+          "question": "¿Cuántas casas tiene cada compañía en backlog y cuál es su valor?",
+          "run": 5
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "sql": "SELECT\n  SUM(\n    CASE\n      WHEN c.name IN ('Lennar Corporation', 'D.R. Horton, Inc.') THEN f.homes_delivered\n      ELSE 0\n    END\n  ) AS total_homes_delivered_2024\nFROM financials f\nJOIN companies c ON c.id = f.company_id\nWHERE f.fiscal_year = 2024\n  AND c.name IN ('Lennar Corporation', 'D.R. Horton, Inc.')",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "values_text_maxcard20_n5.json",
+          "config": "values_text_maxcard20",
+          "question_index": 1,
+          "question": "¿Cuánto vendieron en total Lennar y D.R. Horton juntos en su año fiscal 2024?",
+          "run": 1
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "sql": "SELECT\n  COALESCE(SUM(homes_delivered), 0) AS total_homes_delivered_2024\nFROM financials f\nJOIN companies c ON c.id = f.company_id\nWHERE f.fiscal_year = 2024\n  AND c.ticker IN ('LEN', 'DHI')",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "values_text_maxcard20_n5.json",
+          "config": "values_text_maxcard20",
+          "question_index": 1,
+          "question": "¿Cuánto vendieron en total Lennar y D.R. Horton juntos en su año fiscal 2024?",
+          "run": 2
+        }
+      ]
+    },
+    {
+      "id": 28,
+      "sql": "WITH joined AS (\n  SELECT\n    f.company_id,\n    c.name,\n    f.fiscal_year,\n    f.net_income,\n    f.revenues,\n    f.homes_delivered\n  FROM financials f\n  JOIN companies c ON c.id = f.company_id\n  WHERE c.name IN ('Lennar Corporation', 'D.R. Horton, Inc.')\n)\nSELECT\n  SUM(homes_delivered) AS total_homes_vendidas\nFROM joined\nWHERE fiscal_year = 2024",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "values_text_maxcard20_n5.json",
+          "config": "values_text_maxcard20",
+          "question_index": 1,
+          "question": "¿Cuánto vendieron en total Lennar y D.R. Horton juntos en su año fiscal 2024?",
+          "run": 3
+        }
+      ]
+    },
+    {
+      "id": 29,
+      "sql": "SELECT\n  c.ticker,\n  f.fiscal_year,\n  SUM(h.sale_price) AS total_vendido\nFROM companies c\nJOIN financials f ON f.company_id = c.id\nJOIN communities cm ON cm.company_id = c.id\nJOIN homes h ON h.community_id = cm.id\nWHERE c.ticker IN ('LEN', 'DHI')\n  AND f.fiscal_year = 2024\nGROUP BY c.ticker, f.fiscal_year",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "values_text_maxcard20_n5.json",
+          "config": "values_text_maxcard20",
+          "question_index": 1,
+          "question": "¿Cuánto vendieron en total Lennar y D.R. Horton juntos en su año fiscal 2024?",
+          "run": 4
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "sql": "SELECT\n  SUM(COALESCE(homes_delivered, 0)) AS total_homes_vendidas_2024\nFROM financials f\nJOIN companies c ON c.id = f.company_id\nWHERE c.ticker IN ('LEN', 'DHI')\n  AND f.fiscal_year = 2024",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "values_text_maxcard20_n5.json",
+          "config": "values_text_maxcard20",
+          "question_index": 1,
+          "question": "¿Cuánto vendieron en total Lennar y D.R. Horton juntos en su año fiscal 2024?",
+          "run": 5
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "sql": "SELECT COUNT(*) AS sold_houses_count\nFROM homes h\nJOIN communities c ON c.id = h.community_id\nWHERE c.state = 'TX' AND h.status = 'closed'",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "values_text_maxcard20_n5.json",
+          "config": "values_text_maxcard20",
+          "question_index": 2,
+          "question": "¿Cuántas casas se han vendido en Texas?",
+          "run": 1
+        }
+      ]
+    },
+    {
+      "id": 32,
+      "sql": "SELECT COUNT(*) AS sold_homes_count\nFROM homes h\nJOIN communities c ON c.id = h.community_id\nWHERE c.state = 'TX' AND h.status = 'closed'",
+      "occurrences": 2,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "values_text_maxcard20_n5.json",
+          "config": "values_text_maxcard20",
+          "question_index": 2,
+          "question": "¿Cuántas casas se han vendido en Texas?",
+          "run": 2
+        },
+        {
+          "file": "values_text_maxcard20_n5.json",
+          "config": "values_text_maxcard20",
+          "question_index": 2,
+          "question": "¿Cuántas casas se han vendido en Texas?",
+          "run": 3
+        }
+      ]
+    },
+    {
+      "id": 33,
+      "sql": "SELECT COUNT(*) AS sold_homes_count\nFROM homes\nJOIN communities ON communities.id = homes.community_id\nWHERE communities.state = 'TX'\n  AND homes.status = 'closed'",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "values_text_maxcard20_n5.json",
+          "config": "values_text_maxcard20",
+          "question_index": 2,
+          "question": "¿Cuántas casas se han vendido en Texas?",
+          "run": 4
+        }
+      ]
+    },
+    {
+      "id": 34,
+      "sql": "SELECT COUNT(*) AS houses_sold_in_texas\nFROM homes h\nJOIN communities c ON c.id = h.community_id\nWHERE c.state = 'TX'\n  AND h.status = 'closed'",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "values_text_maxcard20_n5.json",
+          "config": "values_text_maxcard20",
+          "question_index": 2,
+          "question": "¿Cuántas casas se han vendido en Texas?",
+          "run": 5
+        }
+      ]
+    },
+    {
+      "id": 35,
+      "sql": "SELECT\n  AVG(h.sale_price) AS avg_sale_price\nFROM companies c\nJOIN financials f ON f.company_id = c.id\nJOIN communities com ON com.company_id = c.id\nJOIN homes h ON h.community_id = com.id\nWHERE c.name = 'Lennar Corporation'\n  AND f.fiscal_year = 2024\n  AND h.status = 'closed'\n  AND h.closing_date >= '2024-01-01'\n  AND h.closing_date < '2025-01-01'",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "values_text_maxcard20_n5.json",
+          "config": "values_text_maxcard20",
+          "question_index": 3,
+          "question": "¿Precio promedio de venta de las casas cerradas en el año fiscal 2024 de Lennar?",
+          "run": 1
+        }
+      ]
+    },
+    {
+      "id": 36,
+      "sql": "WITH lennar AS (\n  SELECT id\n  FROM companies\n  WHERE ticker = 'LEN'\n)\nSELECT AVG(h.sale_price) AS avg_sale_price\nFROM homes h\nJOIN communities c ON c.id = h.community_id\nJOIN lennar l ON l.id = c.company_id\nJOIN financials f ON f.company_id = c.company_id\nWHERE h.status = 'closed'\n  AND f.fiscal_year = 2024\n  AND h.closing_date IS NOT NULL",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "values_text_maxcard20_n5.json",
+          "config": "values_text_maxcard20",
+          "question_index": 3,
+          "question": "¿Precio promedio de venta de las casas cerradas en el año fiscal 2024 de Lennar?",
+          "run": 2
+        }
+      ]
+    },
+    {
+      "id": 37,
+      "sql": "SELECT\n  AVG(h.sale_price) AS avg_sale_price\nFROM homes h\nJOIN communities c ON c.id = h.community_id\nJOIN companies co ON co.id = c.company_id\nJOIN financials f ON f.company_id = co.id\nWHERE\n  co.name = 'Lennar Corporation'\n  AND h.status = 'closed'\n  AND f.fiscal_year = 2024\n  AND c.opened_date IS NOT NULL",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "values_text_maxcard20_n5.json",
+          "config": "values_text_maxcard20",
+          "question_index": 3,
+          "question": "¿Precio promedio de venta de las casas cerradas en el año fiscal 2024 de Lennar?",
+          "run": 3
+        }
+      ]
+    },
+    {
+      "id": 38,
+      "sql": "WITH lennar AS (\n  SELECT id\n  FROM companies\n  WHERE name = 'Lennar Corporation'\n),\nclosed_homes_2024 AS (\n  SELECT\n    h.sale_price\n  FROM homes h\n  JOIN communities c ON c.id = h.community_id\n  JOIN lennar l ON l.id = c.company_id\n  JOIN financials f ON f.company_id = l.id\n  WHERE h.status = 'closed'\n    AND f.fiscal_year = 2024\n)\nSELECT AVG(sale_price) AS avg_sale_price\nFROM closed_homes_2024\nWHERE sale_price IS NOT NULL",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "values_text_maxcard20_n5.json",
+          "config": "values_text_maxcard20",
+          "question_index": 3,
+          "question": "¿Precio promedio de venta de las casas cerradas en el año fiscal 2024 de Lennar?",
+          "run": 4
+        }
+      ]
+    },
+    {
+      "id": 39,
+      "sql": "SELECT AVG(h.sale_price) AS avg_sale_price_closed\nFROM companies c\nJOIN financials f ON f.company_id = c.id\nJOIN communities com ON com.company_id = c.id\nJOIN homes h ON h.community_id = com.id\nWHERE c.name = 'Lennar Corporation'\n  AND f.fiscal_year = 2024\n  AND h.status = 'closed' AND h.sale_price IS NOT NULL",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "values_text_maxcard20_n5.json",
+          "config": "values_text_maxcard20",
+          "question_index": 3,
+          "question": "¿Precio promedio de venta de las casas cerradas en el año fiscal 2024 de Lennar?",
+          "run": 5
+        }
+      ]
+    },
+    {
+      "id": 40,
+      "sql": "SELECT\n  SUM(c.budget_usd) AS total_budget_usd,\n  COUNT(h.id) AS houses_count\nFROM companies co\nJOIN communities c ON c.company_id = co.id\nLEFT JOIN homes h ON h.community_id = c.id\nWHERE co.ticker = 'DHI' AND co.name = 'D.R. Horton, Inc.'",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "values_text_maxcard20_n5.json",
+          "config": "values_text_maxcard20",
+          "question_index": 4,
+          "question": "¿Presupuesto total de las comunidades de D.R. Horton y cuántas casas tienen?",
+          "run": 1
+        }
+      ]
+    },
+    {
+      "id": 41,
+      "sql": "SELECT\n  SUM(c.budget_usd) AS total_budget_usd,\n  COUNT(h.id) AS total_homes\nFROM companies co\nJOIN communities c ON c.company_id = co.id\nLEFT JOIN homes h ON h.community_id = c.id\nWHERE co.ticker = 'DHI' OR co.name = 'D.R. Horton, Inc.'",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "values_text_maxcard20_n5.json",
+          "config": "values_text_maxcard20",
+          "question_index": 4,
+          "question": "¿Presupuesto total de las comunidades de D.R. Horton y cuántas casas tienen?",
+          "run": 2
+        }
+      ]
+    },
+    {
+      "id": 42,
+      "sql": "SELECT\n  c.name AS company_name,\n  SUM(co.budget_usd) AS total_community_budget_usd,\n  COUNT(h.id) AS total_homes\nFROM companies c\nJOIN communities co ON co.company_id = c.id\nLEFT JOIN homes h ON h.community_id = co.id\nWHERE c.ticker = 'DHI'\nGROUP BY c.name",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "values_text_maxcard20_n5.json",
+          "config": "values_text_maxcard20",
+          "question_index": 4,
+          "question": "¿Presupuesto total de las comunidades de D.R. Horton y cuántas casas tienen?",
+          "run": 3
+        }
+      ]
+    },
+    {
+      "id": 43,
+      "sql": "SELECT\n  SUM(c.budget_usd) AS total_budget_usd,\n  COUNT(h.id) AS total_homes_count\nFROM companies co\nJOIN communities c ON c.company_id = co.id\nLEFT JOIN homes h ON h.community_id = c.id\nWHERE co.name = 'D.R. Horton, Inc.'",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "values_text_maxcard20_n5.json",
+          "config": "values_text_maxcard20",
+          "question_index": 4,
+          "question": "¿Presupuesto total de las comunidades de D.R. Horton y cuántas casas tienen?",
+          "run": 4
+        }
+      ]
+    },
+    {
+      "id": 44,
+      "sql": "SELECT\n  c.name AS company,\n  SUM(cu.budget_usd) AS total_budget_usd,\n  COUNT(h.id) AS total_homes\nFROM companies c\nJOIN communities cu ON cu.company_id = c.id\nJOIN homes h ON h.community_id = cu.id\nWHERE c.name = 'D.R. Horton, Inc.'\nGROUP BY c.name",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "values_text_maxcard20_n5.json",
+          "config": "values_text_maxcard20",
+          "question_index": 4,
+          "question": "¿Presupuesto total de las comunidades de D.R. Horton y cuántas casas tienen?",
+          "run": 5
+        }
+      ]
+    },
+    {
+      "id": 45,
+      "sql": "WITH backlog_homes AS (\n  SELECT\n    c.id AS company_id,\n    c.name AS company_name,\n    f.backlog_value AS backlog_value,\n    COUNT(*) AS backlog_homes_count\n  FROM homes h\n  JOIN communities cm ON cm.id = h.community_id\n  JOIN companies c ON c.id = cm.company_id\n  JOIN financials f ON f.company_id = c.id\n  WHERE h.status = 'backlog'\n  GROUP BY c.id, c.name, f.backlog_value\n)\nSELECT\n  company_name,\n  backlog_homes_count,\n  backlog_value\nFROM backlog_homes\nORDER BY company_name, backlog_value DESC",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "values_text_maxcard20_n5.json",
+          "config": "values_text_maxcard20",
+          "question_index": 5,
+          "question": "¿Cuántas casas tiene cada compañía en backlog y cuál es su valor?",
+          "run": 1
+        }
+      ]
+    },
+    {
+      "id": 46,
+      "sql": "SELECT\n  c.name AS company,\n  COUNT(CASE WHEN h.status = 'backlog' THEN 1 END) AS backlog_homes,\n  f.backlog_value AS backlog_value\nFROM companies c\nJOIN communities com\n  ON com.company_id = c.id\nJOIN homes h\n  ON h.community_id = com.id\nJOIN financials f\n  ON f.company_id = c.id\nGROUP BY\n  c.id,\n  c.name,\n  f.backlog_value",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "values_text_maxcard20_n5.json",
+          "config": "values_text_maxcard20",
+          "question_index": 5,
+          "question": "¿Cuántas casas tiene cada compañía en backlog y cuál es su valor?",
+          "run": 2
+        }
+      ]
+    },
+    {
+      "id": 47,
+      "sql": "WITH backlog_homes AS (\n  SELECT\n    c.id AS company_id,\n    COUNT(*) AS backlog_count,\n    SUM(f.backlog_value) AS backlog_value_total\n  FROM homes h\n  JOIN communities cm ON cm.id = h.community_id\n  JOIN companies c ON c.id = cm.company_id\n  LEFT JOIN financials f\n    ON f.company_id = c.id\n  WHERE h.status = 'backlog'\n  GROUP BY c.id\n)\nSELECT\n  co.name AS company,\n  bh.backlog_count AS backlog_homes_count,\n  bh.backlog_value_total AS backlog_value\nFROM backlog_homes bh\nJOIN companies co ON co.id = bh.company_id\nORDER BY co.name",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "values_text_maxcard20_n5.json",
+          "config": "values_text_maxcard20",
+          "question_index": 5,
+          "question": "¿Cuántas casas tiene cada compañía en backlog y cuál es su valor?",
+          "run": 3
+        }
+      ]
+    },
+    {
+      "id": 48,
+      "sql": "SELECT\n  c.name AS company,\n  COUNT(*) AS homes_in_backlog,\n  f.backlog_value AS backlog_value\nFROM homes h\nJOIN communities com ON com.id = h.community_id\nJOIN companies c ON c.id = com.company_id\nLEFT JOIN financials f ON f.company_id = c.id AND f.backlog_value IS NOT NULL\nWHERE h.status = 'backlog'\nGROUP BY c.id, c.name, f.backlog_value",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "values_text_maxcard20_n5.json",
+          "config": "values_text_maxcard20",
+          "question_index": 5,
+          "question": "¿Cuántas casas tiene cada compañía en backlog y cuál es su valor?",
+          "run": 4
+        }
+      ]
+    },
+    {
+      "id": 49,
+      "sql": "SELECT\n  c.name AS company_name,\n  COUNT(h.id) AS backlog_homes_count,\n  f.backlog_value AS backlog_value\nFROM companies c\nJOIN communities com ON com.company_id = c.id\nJOIN homes h ON h.community_id = com.id\nLEFT JOIN financials f ON f.company_id = c.id\nWHERE h.status = 'backlog'\nGROUP BY c.id, f.backlog_value",
+      "occurrences": 1,
+      "whitespace_variants": false,
+      "sources": [
+        {
+          "file": "values_text_maxcard20_n5.json",
+          "config": "values_text_maxcard20",
+          "question_index": 5,
+          "question": "¿Cuántas casas tiene cada compañía en backlog y cuál es su valor?",
+          "run": 5
+        }
+      ]
+    }
+  ]
+}
