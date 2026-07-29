@@ -246,6 +246,55 @@ existe. Cero llamadas a API.
 > cifra** y es lo que el render de la CLI quiere nombrar. El `41.3x` de la tabla de
 > las dos formas es correcto **como ratio de valor** y así se lee.
 
+#### Dos campos separados que nunca se colapsan
+
+Resolución de la corrección de arriba. Definido el 29 de julio de 2026 en
+`docs/rebanada-3-addendum-01.md`.
+
+| Campo | Fórmula | Cuándo existe |
+|---|---|---|
+| `row_multiplier` | `COUNT(T.pk) / COUNT(DISTINCT T.pk)` | **Siempre calculable.** Es el factor de duplicación de **filas** |
+| `value_inflation` | `reported_value / deduplicated_value` | **Solo** en el caso angosto donde `deduplicated_value` existe. `null` en cualquier otro caso |
+
+**`value_inflation` no se aproxima nunca con `row_multiplier`.** Medido: dividir por
+`row_multiplier` da 359,701,250 contra 348,500,000 reales, 3.21% de error en una
+cifra que se vería exacta.
+
+Cuándo sí coinciden, y es el único caso:
+
+| Agregado afectado | ¿`row_multiplier` **es** el factor de inflación? |
+|---|---|
+| `COUNT` de la PK de la tabla afectada | **Sí**, exacto por definición |
+| `SUM`, `AVG`, `TOTAL` de cualquier otra columna | **No.** Solo indica el orden de la duplicación |
+
+Coinciden solo si la columna agregada no correlaciona con el conteo del fan-out, y
+en datos reales casi siempre correlaciona.
+
+**Qué cambia en el render.** Cuando existe `value_inflation`, se cita ése y se dice
+de dónde sale. Cuando no existe, el texto habla de la duplicación y **nunca afirma
+por cuánto está mal el número**:
+
+- Va: *"el presupuesto se sumó una vez por cada casa de la comunidad, alrededor de 40
+  casas por comunidad"*.
+- No va: *"el presupuesto está inflado 40x"*.
+
+**Ésta es la distinción que es el punto del proyecto.** Un guardrail que reporta un
+factor de inflación que no midió está fabricando precisión, que es exactamente la
+falla que le medimos al modelo en la rebanada 2.
+
+#### Nota de lenguaje: `inflated` para `AVG`
+
+`inflated` significa **"al menos un agregado está afectado por duplicación de
+filas"**. Para `SUM` y `COUNT` el efecto siempre va hacia arriba. Para `AVG` puede ir
+en **cualquier dirección**, porque el resultado se vuelve un promedio ponderado.
+
+El veredicto no se renombra, pero **el render para `AVG` dice "distorsionado", no
+"inflado"**.
+
+Medido el 2026-07-29 sobre `AVG(c.budget_usd)` con el join a `homes`: el promedio
+**bajó**, de 37,162,500 a 37,100,377.83. La dirección no es teórica, en esta base va
+para abajo.
+
 #### Las dos formas
 
 | Forma | Qué es | Caso medido |
@@ -270,8 +319,18 @@ existe. Cero llamadas a API.
 **Dentro:**
 
 - Un solo statement `SELECT`, con o sin CTEs, dialecto sqlite.
-- Agregados sensibles a duplicación: `SUM`, `AVG`, `COUNT` sin DISTINCT, `TOTAL`,
-  `GROUP_CONCAT`.
+- Agregados sensibles a duplicación: `SUM`, `AVG`, `COUNT` sin DISTINCT, `TOTAL`.
+
+  > **Reducción de alcance 2026-07-29: `GROUP_CONCAT` sale de la lista.** Razón:
+  > **cero apariciones en 49 muestras de output real del modelo.** No hay blanco. Es
+  > la lección 10 aplicada tal cual —se descarta por falta de blanco, no por
+  > dificultad— igual que se descartó la validación de esquema. Si aparece en la
+  > rebanada 4 o 5, se reintroduce **con su caso de prueba**.
+  >
+  > **`TOTAL` se queda.** Es el alias de `SUM` en SQLite y comparte camino de código,
+  > pero necesita su propio assert: el caso A5 del set adversario existe para eso.
+  > Verificado el 2026-07-29 que `TOTAL` y `SUM` dan el mismo valor sobre la fuente
+  > duplicada.
 - Dirección del join **solo desde FKs declaradas** (`PRAGMA foreign_key_list`). El
   lado "uno" es la tabla referenciada cuando la columna referenciada es PK o tiene
   índice UNIQUE. **Nunca se infiere de los datos.**
@@ -302,8 +361,17 @@ distinto. No es un hoyo del guardrail, porque no depende de juicio.
 **Dentro, pero reportado con salvedad:**
 
 - **`GROUP BY`:** el multiplicador se calcula global sobre la fuente de filas, no
-  por grupo. Se reporta con `multiplier_scope: "global"`. No va a `not_analyzed`,
-  porque un multiplicador global mayor a 1 ya prueba que existe duplicación.
+  por grupo. Se reporta con `multiplier_scope: "global"`. No va a `not_analyzed`.
+
+  > **Ajuste de redacción 2026-07-29.** La versión anterior decía que un
+  > multiplicador global mayor a 1 "ya prueba que existe duplicación", lo cual se
+  > lee como más de lo que es. Preciso: prueba que **existe** duplicación **en algún
+  > lugar del resultado**, no que **cada grupo** esté afectado.
+  >
+  > Suficiente para **marcar y explicar**. Insuficiente para **afirmar algo de una
+  > fila específica del output**. Así se redacta el render: no se le dice al usuario
+  > que la fila que está mirando está inflada, se le dice que el resultado contiene
+  > duplicación.
 - **`deduplicated_value`:** solo en el caso angosto —exactamente un agregado
   marcado, forma `fan_trap`, el agregado es `SUM` o `COUNT` sobre una columna de la
   tabla del lado "uno", y sin `GROUP BY`. En cualquier otro caso va `null`. **No se
@@ -470,12 +538,35 @@ silenciosa. Lo tachado quedó cubierto por
 - **El formato de la worksheet ciega.** Especificado en la sección 8 de
   `docs/rebanada-3-especificacion.md`, pero **no volcado aquí a propósito**: es
   material de la 1b y se documenta cuando se construya, no antes.
-- **Cómo se parte dev y holdout.** Sigue abierto. La etapa 2 dice "solo la mitad
-  dev" y la regla del holdout nombra `fanout_labels_holdout.md`, pero **la
-  proporción, el criterio de asignación y el momento en que se congela la partición
-  no están escritos.** Importa: si la partición se decide después de ver las
-  etiquetas, el holdout no es un holdout. La lista de cierre pide "conteos de los
-  splits" y todavía no hay con qué contestarla.
+- ~~**Cómo se parte dev y holdout.**~~ Cubierto: 50/50 estratificado por
+  `(is_no_rows, has_cte, has_left_join)`, seed `20260729`, congelado en
+  `evals/gold/split_assignment.json`. Ver la sección de la partición arriba.
+- ~~**El formato de la worksheet ciega.**~~ Cubierto por la sección 8 de
+  `docs/rebanada-3-especificacion.md`: id, SQL formateado, `LABEL:`, `SHAPE:`, y en
+  el header el DDL completo más el criterio resumido.
+
+Huecos del reporte de cierre que **se quedan abiertos a propósito**, cada uno con la
+condición que los cierra:
+
+- **`T` por query (8.3).** Determinar `T` requiere la lógica del detector. **Se cierra
+  con la primera salida del detector, no antes.** Cualquier intento de cerrarlo ahora
+  sería escribir el detector con otro nombre.
+- **Trazar el join path real de Q5 (8.7).** Se cierra cuando el detector corra sobre
+  el corpus. El caso A2 del set adversario cubre la forma multi-salto mientras tanto.
+- **Joins anidados dentro de CTEs y subconsultas (8.8).** El conteo de 13 `LEFT JOIN`
+  es sintáctico y del scope de más afuera. Es un piso, no un total.
+- **`generate.py` (8.10).** Se sabe que quita un `;` final en 1 de 50 casos. No se ha
+  leído para saber si es intencional ni si quita algo más.
+- **La cláusula "PK o índice UNIQUE" del alcance de v1 no tiene blanco.** Medido: el
+  único índice UNIQUE de esta base es el autoindex de la PK compuesta de
+  `financials`, `origin=pk`. No hay ninguna restricción UNIQUE declarada aparte de las
+  PKs, así que hoy **el lado "uno" se determina solo por PK** y esa mitad de la
+  cláusula está escrita pero sin probar.
+- **`no_rows` subestima la adivinanza de literales.** Medido: **24 literales de texto
+  del corpus no existen en su columna, y solo 2 entradas devolvieron 0 filas.** La id
+  25 usa `'Backlog'` igual que la id 24 y sí devolvió filas. Contar `no_rows` como
+  proxy de "adivinó mal el literal" subestima el fenómeno por un factor de doce. No
+  afecta el etiquetado; afecta cualquier conteo de la rebanada 4.
 - **La duplicación semántica del corpus sigue sin medir.** El dedupe es **solo por
   string**: dos queries idénticas salvo alias, orden de columnas o nombre de la
   columna de salida son dos entradas distintas de las 49. El propio ROADMAP dice que
@@ -489,6 +580,48 @@ silenciosa. Lo tachado quedó cubierto por
   que merece. **No bloquea el etiquetado:** etiquetar 49 strings es correcto y
   necesario; lo que no es correcto es tratar 49 como 49 observaciones independientes
   al calcular métricas.
+
+### La partición dev / holdout
+
+Especificada el 29 de julio de 2026 en `docs/rebanada-3-addendum-01.md`. Faltaba por
+completo. **Si se decide después de ver las etiquetas, no es un holdout.**
+
+#### El set adversario no se parte
+
+Va **100% a dev**. Son unit tests con respuesta declarada, no una muestra. **No
+entran a la estimación de desempeño de nadie.** Se reportan como pasa o falla por
+caso, contra el veredicto esperado declarado.
+
+Razón: son deliberadamente adversarios y **no representan output del modelo**.
+Mezclarlos con el corpus real produciría una precision y un recall que no describen
+ninguna de las dos poblaciones.
+
+#### El corpus real se parte 50/50, estratificado
+
+- **Estratos:** la tupla `(is_no_rows, has_cte, has_left_join)`, con los flags
+  estructurales ya medidos en el lote de verificación. **Son hechos medidos, no
+  etiquetas, así que no hay fuga.**
+- **Asignación:** dentro de cada estrato, shuffle con seed `20260729` y luego
+  alternar dev y holdout. Con 2 entradas de `no_rows`, una a cada lado. Con 6 de CTE,
+  tres y tres.
+- **Congelado:** la asignación se escribe en `evals/gold/split_assignment.json` y se
+  commitea **antes de que exista una sola etiqueta**.
+- **Limitación anotada:** los 13 `LEFT JOIN` son un conteo **sintáctico del scope de
+  más afuera** y pueden ser un piso. Estratos imperfectos siguen ganándole a un split
+  aleatorio con N chica, pero la imperfección queda escrita.
+
+#### Qué puede y qué no puede concluir el holdout
+
+**Puede:** cachar **overfitting grueso**. Si el comportamiento cambia fuerte entre la
+mitad que se usó para construir y la que no, eso se ve.
+
+**No puede: producir una tasa publicable.** Son 49 entradas, mitades de 24 y 25, con
+tasa de positivos desconocida. **Precision y recall se reportan en conteos, nunca en
+porcentajes**, hasta que exista el gold set grande de la rebanada 4.
+
+Y hay una segunda razón para no publicar porcentajes que es independiente del N: la
+**duplicación semántica del corpus sigue sin medir**, así que las 49 entradas no son
+49 observaciones independientes.
 
 ### Lote de verificación del corpus: decisiones pre-registradas
 
