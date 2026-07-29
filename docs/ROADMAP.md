@@ -147,6 +147,172 @@ también mataría consultas legítimas —un `SUM(DISTINCT)` o una subconsulta b
 armada— y la rebanada 2 ya mostró que este sistema tiene bastantes formas de
 tener razón como para no estrangularlas de entrada.
 
+### Las etapas de la rebanada 3
+
+| Etapa | Qué | Estado |
+|---|---|---|
+| 1 | Corpus congelado, pin de sqlglot, criterios de etiquetado | **CERRADA** (`8e140b4`, `e111d8f`) |
+| 1b | Set adversario escrito a mano, worksheets ciegas de la unión, validador | **Siguiente** |
+| 2 | Iker etiqueta a mano, solo la mitad dev | |
+| 3 | Detector construido y corrido contra dev | |
+| 4 | Se abre el holdout, una sola vez | |
+
+El invariante que no se negocia: **worksheets y etiquetas se commitean antes de que
+exista una sola línea del detector.** El orden de los commits es la evidencia de
+que no se etiquetó mirando el output.
+
+### El diseño del detector
+
+Especificado el 29 de julio de 2026, antes de escribir código. La fuente larga
+vive en `docs/rebanada-3-especificacion.md`.
+
+#### Los cinco veredictos
+
+Cada SQL analizado recibe **exactamente un** veredicto. Se evalúan **en este orden**
+y el primero que aplica gana.
+
+| Orden | Veredicto | Cuándo |
+|---|---|---|
+| 1 | `not_analyzed` | El detector no pudo analizar la query. Siempre con `reason`. |
+| 2 | `no_rows` | La fuente de filas devuelve 0. El multiplicador es indefinido. |
+| 3 | `clean` | Analizada, sin forma de fan-out presente. |
+| 4 | `shape_no_inflation` | La forma está presente, el multiplicador medido es 1.0. |
+| 5 | `inflated` | La forma está presente y el multiplicador medido es mayor a 1.0. |
+
+- **`not_analyzed` va primero a propósito.** Si no podemos analizar, lo decimos y
+  paramos. No se degrada a `clean`, que afirmaría algo que no verificamos.
+- **`no_rows` va antes que `clean`** porque el multiplicador no se puede calcular
+  sobre cero filas. "Estaba rota por otra razón" y "no hubo inflación" son hechos
+  distintos y no se colapsan. Nunca se reporta `shape_no_inflation` sobre una query
+  sin filas.
+- Si hay varios hallazgos en la misma query, **el veredicto es el peor caso.** Un
+  solo hallazgo `inflated` hace que la query sea `inflated`.
+- **"Forma presente" significa las dos cosas juntas:** la estructura de joins **y**
+  un agregado sensible a duplicación sobre una columna afectada. Una query sin
+  agregados no tiene forma, va `clean`.
+
+#### El multiplicador
+
+```
+multiplier = COUNT(T.pk) / COUNT(DISTINCT T.pk)
+```
+
+Sobre la misma fuente de filas de la query original (FROM, JOINs y WHERE, sin
+ORDER BY ni LIMIT), donde `T` es la tabla cuya columna se está agregando y `pk` su
+llave primaria.
+
+Consecuencia de la fórmula: **`no_rows` se define como `COUNT(T.pk) = 0`.**
+
+Costo: dos queries de SQLite por hallazgo, sobre la conexión read-only que ya
+existe. Cero llamadas a API.
+
+> **Corrección 2026-07-29.** El diseño original decía `COUNT(*)` en el numerador y
+> **estaba mal**. Con `LEFT JOIN` las filas sin match traen `T.pk` en NULL:
+> `COUNT(*)` las cuenta y `COUNT(DISTINCT T.pk)` no, así que el multiplicador salía
+> **inflado sin que existiera inflación** —un falso `inflated`, que es justo el
+> error que este guardrail no se puede permitir, porque enseña a desconfiar de las
+> advertencias. `COUNT(T.pk)` excluye NULLs igual que el denominador, y queda
+> correcta para INNER y para LEFT.
+
+#### Las dos formas
+
+| Forma | Qué es | Caso medido |
+|---|---|---|
+| `fan_trap` | Se agrega una columna del lado "uno" después de unir al lado "muchos" | Q4, `budget_usd` inflado **41.3x** |
+| `chasm_trap` | Dos ramas uno-a-muchos desde un ancestro común, unidas entre sí. Cada rama multiplica a la otra | Q5, casas por 2 años fiscales |
+
+> **Corrección 2026-07-29.** El diseño original comparaba **hijos directos** de un
+> ancestro común, y con eso **no caza Q5**, que es uno de los dos casos medidos.
+> En este esquema `homes` no tiene FK directa a `companies`: llega vía
+> `communities`. Las dos ramas de Q5 salen de `companies` con profundidades
+> distintas —una a `financials` en un salto, otra a `homes` en dos, vía
+> `communities`— así que **la búsqueda de ramas hermanas tiene que ser a cualquier
+> profundidad.**
+>
+> Esto salió del dato de la etapa 1 de que el esquema tiene exactamente 3 FKs
+> (`financials.company_id`, `communities.company_id`, `homes.community_id`): al
+> escribirlas se ve que ninguna liga `homes` con `companies`.
+
+#### Alcance de v1
+
+**Dentro:**
+
+- Un solo statement `SELECT`, con o sin CTEs, dialecto sqlite.
+- Agregados sensibles a duplicación: `SUM`, `AVG`, `COUNT` sin DISTINCT, `TOTAL`,
+  `GROUP_CONCAT`.
+- Dirección del join **solo desde FKs declaradas** (`PRAGMA foreign_key_list`). El
+  lado "uno" es la tabla referenciada cuando la columna referenciada es PK o tiene
+  índice UNIQUE. **Nunca se infiere de los datos.**
+- Joins explícitos con `ON`, y joins por coma con igualdad en `WHERE`.
+- Análisis por scope con `traverse_scope`, así que **un CTE que pre-agrega bien no
+  se marca.**
+- Las dos formas de arriba.
+
+**Nunca se marcan, y no es una excepción afinada:**
+
+- Cualquier agregado con `DISTINCT`.
+- `MAX` y `MIN`.
+
+Es aritmética, no criterio: duplicar filas no mueve el valor de un máximo ni de un
+distinto. No es un hoyo del guardrail, porque no depende de juicio.
+
+**Fuera de v1, van a `not_analyzed` con su `reason`:**
+
+- Self joins.
+- Window functions.
+- `UNION`, `INTERSECT`, `EXCEPT`.
+- Joins sobre columnas que no son una relación de FK declarada, por ejemplo unir
+  por `name`.
+- Subqueries correlacionadas en la lista del `SELECT`.
+- Columnas que `qualify` no resuelve o declara ambiguas. Ya sabemos que lanza
+  `OptimizeError`, así que **este camino falla ruidoso y eso está bien.**
+
+**Dentro, pero reportado con salvedad:**
+
+- **`GROUP BY`:** el multiplicador se calcula global sobre la fuente de filas, no
+  por grupo. Se reporta con `multiplier_scope: "global"`. No va a `not_analyzed`,
+  porque un multiplicador global mayor a 1 ya prueba que existe duplicación.
+- **`deduplicated_value`:** solo en el caso angosto —exactamente un agregado
+  marcado, forma `fan_trap`, el agregado es `SUM` o `COUNT` sobre una columna de la
+  tabla del lado "uno", y sin `GROUP BY`. En cualquier otro caso va `null`. **No se
+  aproxima.**
+
+#### Forma de la salida
+
+Estructurado en el JSON de la corrida, más un render corto en la CLI. Los dos:
+la rebanada 4 necesita scorear automático, y en la rebanada 6 esto lo consume un
+agente, y un agente no lee prosa.
+
+```json
+"fanout": {
+  "verdict": "inflated",
+  "reason": null,
+  "findings": [{
+    "shape": "fan_trap",
+    "aggregate": "SUM(communities.budget_usd)",
+    "one_side": "communities",
+    "many_side": "homes",
+    "join_path": ["homes.community_id = communities.id"],
+    "multiplier": 41.3,
+    "multiplier_scope": "global",
+    "reported_value": 14388050000.0,
+    "deduplicated_value": 348500000.0
+  }]
+}
+```
+
+`reason` se llena **solo** cuando el veredicto es `not_analyzed`. `findings` va
+vacío en `clean` y en `not_analyzed`.
+
+**El render de la CLI nombra la consecuencia, no la mecánica.** Va "el presupuesto
+se sumó una vez por cada casa de la comunidad, no una vez por comunidad,
+multiplicador medido 41.3x". No va "fan-out detectado en el join". La respuesta se
+sigue mostrando siempre: **marca y explica, no bloquea.** El `deduplicated_value`
+se muestra etiquetado como diagnóstico, **nunca como la respuesta**.
+
+Sin taxonomía de severidad en v1. El `shape` sí, porque el eval lo necesita.
+Severidad no, porque no hay datos todavía para inventar los niveles.
+
 ### Etapa 1 de 4: congelar el corpus
 
 Predicciones escritas **antes** de abrir `evals/runs/*.json`, para poder medir
@@ -230,23 +396,13 @@ una sola línea del detector.** Solo se mueven una etapa adelante. El orden es l
 que impide que el detector se escriba primero y las etiquetas se acomoden después
 para que salga bien.
 
-#### Los cinco veredictos
+#### Cuántas entradas caen en `no_rows`
 
-**`no_rows`** — la query devolvió 0 filas. El multiplicador es **indefinido
-(0/0), no 1.0**.
+El veredicto está definido arriba, en el diseño del detector. Lo que la etapa 1
+aporta es **cuántas entradas del corpus le toca**, y son pocas.
 
-Nunca se reporta `shape_no_inflation` sobre una query sin filas. **"Estaba rota por
-otra razón" y "no hubo inflación" son hechos distintos y no se colapsan.** Una
-query que no devuelve nada no es evidencia de que la detección de fan-out
-funcionó; es evidencia de que no hubo nada que medir. Colapsarlas convertiría un
-caso sin información en un acierto del detector.
-
-Esto salió de la pregunta sobre el alcance del corpus: al revisar de dónde salían
-las 49 entradas apareció que dos de ellas devolvieron 0 filas, y que el diseño no
-tenía dónde ponerlas.
-
-Cuántas son, medido sobre el corpus (el dato sale de `result.row_count` en los
-JSON de corridas, no se recalculó corriendo nada):
+El dato sale de `result.row_count` en los JSON de corridas. No se recalculó
+corriendo nada.
 
 | | |
 |---|---|
@@ -256,24 +412,38 @@ JSON de corridas, no se recalculó corriendo nada):
 | Con error de sqlite | 0 |
 | Mismo SQL con conteos distintos entre corridas | 0 |
 
-Los otros cuatro veredictos **no están especificados todavía.** Ver "Pendiente de
-especificar" abajo: de los cinco solo están nombrados `no_rows` y
-`shape_no_inflation`, y este documento no va a inventar los otros tres.
+Dos casos no alcanzan para saber si la regla de precedencia de `no_rows` se aplica
+bien. **Es un argumento a favor del set adversario de la 1b:** si `no_rows` va a ir
+antes que `clean` en el orden de evaluación, conviene tener más de dos entradas que
+lo ejerciten.
+
+Ojo con el `row_count` para la 1b: es el dato que define este veredicto, y por eso
+mismo **no puede entrar a la worksheet.** Una query que devolvió 4 filas cuando se
+pidió un solo total se delata sola, y ver eso mientras etiquetas ya no es etiquetar
+el SQL, es leer el resultado.
 
 #### Pendiente de especificar
 
-Cosas que la etapa 1 necesitaba y que no llegaron. Se listan aquí para que la
-ausencia sea visible en el repo en lugar de silenciosa:
+Cosas que la etapa 1 necesitaba y que no llegaron con el prompt, porque se truncó
+al pegarse. Se listan aquí para que la ausencia sea visible en el repo en lugar de
+silenciosa. Lo tachado quedó cubierto por
+`docs/rebanada-3-especificacion.md` el 29 de julio de 2026.
 
-- **Los nombres y definiciones de cuatro de los cinco veredictos.** Solo hay
-  `no_rows` (definido arriba) y `shape_no_inflation` (nombrado, no definido).
-  Sin el vocabulario completo no se puede etiquetar, y por eso no importa
-  todavía: las worksheets se mueven a la 1b.
-- **El alcance de v1 del detector.** Qué reporta, qué no, y dónde se corta.
-- **Las etapas 2, 3 y 4.** La etapa 1 se identificó como "1 de 4" pero las otras
-  tres no están escritas.
-- **El formato de la worksheet ciega**: qué columnas lleva y qué se le oculta al
-  etiquetador. Es de la 1b, pero conviene decidirlo antes de llegar ahí.
+- ~~**Los nombres y definiciones de cuatro de los cinco veredictos.**~~ Cubierto:
+  los cinco están arriba, con orden de precedencia.
+- ~~**El alcance de v1 del detector.** Qué reporta, qué no, y dónde se corta.~~
+  Cubierto: dentro, nunca-se-marca, fuera-a-`not_analyzed`, y con-salvedad.
+- ~~**Las etapas 2, 3 y 4.**~~ Cubierto: la tabla de etapas está arriba, y son
+  cinco con la 1b.
+- **El formato de la worksheet ciega.** Especificado en la sección 8 de
+  `docs/rebanada-3-especificacion.md`, pero **no volcado aquí a propósito**: es
+  material de la 1b y se documenta cuando se construya, no antes.
+- **Cómo se parte dev y holdout.** Sigue abierto. La etapa 2 dice "solo la mitad
+  dev" y la regla del holdout nombra `fanout_labels_holdout.md`, pero **la
+  proporción, el criterio de asignación y el momento en que se congela la partición
+  no están escritos.** Importa: si la partición se decide después de ver las
+  etiquetas, el holdout no es un holdout. La lista de cierre pide "conteos de los
+  splits" y todavía no hay con qué contestarla.
 
 ### Dependencia congelada: sqlglot 30.14.0
 
