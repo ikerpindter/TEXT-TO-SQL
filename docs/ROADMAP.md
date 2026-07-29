@@ -147,6 +147,89 @@ también mataría consultas legítimas —un `SUM(DISTINCT)` o una subconsulta b
 armada— y la rebanada 2 ya mostró que este sistema tiene bastantes formas de
 tener razón como para no estrangularlas de entrada.
 
+### Dependencia congelada: sqlglot 30.14.0
+
+| | |
+|---|---|
+| Versión fijada | **30.14.0**, pin exacto `==` en `pyproject.toml` |
+| Publicada | 27 de julio de 2026 |
+| Fijada en este repo | 29 de julio de 2026 |
+| Gate | el smoke test de abajo |
+
+El plan de la etapa decía 30.12.0. Ese número venía de un agregador de terceros y
+estaba dos MINOR atrasado; `pypi.org/pypi/sqlglot/json` da 30.14.0 del 27 de julio
+(la 30.12.0 es del 26 de junio). Se fijó la 30.14.0.
+
+**El changelog de 30.13 y 30.14 NO se verificó línea por línea.** Se leyó por
+encima —los cambios rompedores de 30.13.0 se ven como anotaciones de tipos y
+refinamientos de parseo, ninguno tocando `scope.py`, la firma de `qualify` ni el
+dialecto sqlite— pero eso es una impresión, no una auditoría. **El gate fue el
+smoke test, no la lectura del changelog.** Si algo de 30.13/30.14 rompe este
+proyecto de una forma que las cuatro partes no ejercitan, no lo vamos a saber por
+haber leído el changelog.
+
+Por qué el pin es exacto y no un rango: en sqlglot el MINOR sube cuando hay
+cambios que rompen compatibilidad. Un rango deja entrar esos cambios sin que nadie
+corra el smoke test.
+
+#### El smoke test: `evals/gold/smoke_sqlglot.py`
+
+Cuatro partes, cada una con assert propio. Resultado del 29 de julio de 2026,
+contra sqlglot 30.14.0 y Python 3.12:
+
+| Parte | API | Resultado |
+|---|---|---|
+| a | `parse_one(sql, dialect="sqlite")` | ok — los 6 fixtures parsean como `Select` |
+| b | `build_scope`, `traverse_scope` | ok — CTE (2 scopes, 3 sources), subconsulta en `FROM` (2 scopes, 1 source), subconsulta en `WHERE` (2 scopes, 1 source) |
+| c | `qualify` con el esquema real | ok — `SUM(budget_usd)` sin prefijo se resuelve a `communities.budget_usd`, y la columna sigue dentro del `SUM`. Contraprueba: `name` con `companies` y `communities` en el `FROM` es rechazada con `OptimizeError` |
+| d | `PRAGMA table_info` / `foreign_key_list` | ok — 4 tablas, las 4 PKs (incluida la compuesta de `financials`) y las 3 FKs |
+
+**Este test no lee `corpus_sql.json`, y correr sin ese archivo es parte de lo que
+afirma.** Los seis fixtures están escritos a mano dentro del propio archivo,
+contra el esquema real de `portfolio.db`. Dos de ellos son deliberadamente la
+forma de las dos puertas de fan-out medidas en la rebanada 2 —agregar sobre el
+lado "uno" de un join a `homes`, y colgar `financials` de un join sin relación de
+grano real— porque son los árboles que el detector va a tener que leer.
+
+La razón de la separación es una dependencia circular: el gate de la librería no
+puede depender del artefacto de datos que se construye usando la librería. Son dos
+afirmaciones distintas y viven en dos archivos distintos. **La verificación de que
+el SQL del corpus parsea vive en `extract_corpus.py`**, que es donde el corpus se
+produce, y si algo no parsea el corpus no se escribe.
+
+La parte (c) es la que justifica el archivo. Es la única API cuya firma no estaba
+verificada antes de esta etapa, y trae tres defaults que muerden:
+
+- **`validate_qualify_columns=True`** hace que `qualify` **lance excepción** cuando
+  no puede resolver una columna. Sobre SQL generado por un modelo eso es un riesgo
+  real: mezclar parse y qualify en el mismo contador inflaría el "no parsea". La
+  contraprueba del test existe para detectar si este default deja de validar,
+  porque entonces el detector confiaría en una resolución que no ocurrió.
+- **`identify=True` y `quote_identifiers=True`** reescriben el SQL con todo
+  entrecomillado. Lo que salga de `qualify` no se le muestra al usuario.
+- **`schema` e `infer_schema` interactúan.** Con esquema explícito va
+  `infer_schema=False`, o inventa columnas que no se le dieron.
+
+El esquema que se le pasa a `qualify` es `{tabla: {columna: TIPO}}` y sale de
+`PRAGMA table_info`, igual que el prompt. No hay ningún esquema escrito a mano.
+
+#### Regla de imports para sqlglot
+
+Solo se importa de `sqlglot` y de `sqlglot.optimizer`. Nunca de rutas internas
+tipo `sqlglot.expressions.aggregate`: en el 30.x `expressions` está partido en
+submódulos, y atarse a una ruta interna nos deja expuestos a un refactor de
+upstream en un PATCH.
+
+Un detalle verificado a mano que hay que saber antes de escribir el detector: el
+`__init__` de `sqlglot.optimizer` expone `build_scope`, `traverse_scope`,
+`find_all_in_scope`, `find_in_scope`, `walk_in_scope`, `Scope`, `optimize` y
+`RULES` por un `__getattr__` PEP 562 (`_LAZY_ATTRS`), **pero `qualify` no está en
+esa lista.** `from sqlglot.optimizer import qualify` devuelve el **módulo**, no la
+función —`callable()` da `False`— y hay que llamar `qualify.qualify(...)`. La doc
+renderizada no dice esto; las páginas `sqlglot.com/sqlglot/optimizer/qualify.html`
+y `.../scope.html` dan **404**, así que la firma se verificó contra el fuente en el
+tag `v30.14.0` y luego contra el paquete instalado con `inspect.signature`.
+
 ## Regla de diseño para la rebanada 2
 
 **Los valores de una columna van completos o no van. Nunca una muestra.**
