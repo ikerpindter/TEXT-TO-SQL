@@ -213,6 +213,38 @@ existe. Cero llamadas a API.
 > error que este guardrail no se puede permitir, porque enseña a desconfiar de las
 > advertencias. `COUNT(T.pk)` excluye NULLs igual que el denominador, y queda
 > correcta para INNER y para LEFT.
+>
+> **Medida el 2026-07-29:** la corrección es **correcta e inerte en el corpus de la
+> etapa 1.** Cero de los pares medidos difieren, porque esta base no tiene huecos de
+> FK —0 comunidades sin casas, 0 compañías sin comunidades, 0 sin `financials`— así
+> que ningún `LEFT JOIN` sobre FKs declaradas produce `T.pk` NULL. Se queda por la
+> decisión pre-registrada 2. Forzando el hueco con un `ON` que no matchea, la
+> fórmula original **divide por cero y truena** y la corregida da indefinido, o sea
+> `no_rows`: la corrección evita un crash, no solo un falso `inflated`. Detalle en
+> `evals/results/corpus_verification.md`.
+
+> **Corrección 2026-07-29: el multiplicador no es el ratio de valor.** El JSON de
+> ejemplo de la especificación pone `"multiplier": 41.3` junto a
+> `reported_value: 14388050000.0` y `deduplicated_value: 348500000.0`, dando a
+> entender que el multiplicador es el cociente de esos dos. **No lo es.** Medido
+> sobre ese mismo caso:
+>
+> - Multiplicador de **filas**, que es lo que da esta fórmula: `400/10` = **40.0**
+> - Ratio de **valor**, `reportado/correcto`: `14,388,050,000 / 348,500,000` = **41.285653**
+>
+> Difieren porque el ratio de valor está **ponderado por `budget_usd`**: cada
+> comunidad aporta su presupuesto por *su propio* número de casas, y los
+> presupuestos no son iguales. Coincidirían solo si lo fueran.
+>
+> **Consecuencia dura: `deduplicated_value` no se puede derivar dividiendo por el
+> multiplicador.** `14,388,050,000 / 40.0` da `359,701,250`, contra `348,500,000`
+> reales: **3.21% de error** presentado como cifra exacta. Por eso la
+> especificación dice que no se aproxima, y ahora hay número en lugar de intuición.
+>
+> Los dos sirven y miden cosas distintas: el multiplicador de filas **prueba que hay
+> duplicación** y es estructural; el ratio de valor **dice cuánto se infló esta
+> cifra** y es lo que el render de la CLI quiere nombrar. El `41.3x` de la tabla de
+> las dos formas es correcto **como ratio de valor** y así se lee.
 
 #### Las dos formas
 
@@ -444,6 +476,60 @@ silenciosa. Lo tachado quedó cubierto por
   no están escritos.** Importa: si la partición se decide después de ver las
   etiquetas, el holdout no es un holdout. La lista de cierre pide "conteos de los
   splits" y todavía no hay con qué contestarla.
+- **La duplicación semántica del corpus sigue sin medir.** El dedupe es **solo por
+  string**: dos queries idénticas salvo alias, orden de columnas o nombre de la
+  columna de salida son dos entradas distintas de las 49. El propio ROADMAP dice que
+  el agrupamiento útil es por resultado o por plan de ejecución, y **ese agrupamiento
+  nunca se calculó.**
+
+  **Se mide antes de publicar cualquier precision o recall, porque cambia la N
+  efectiva.** Si de las 49 entradas resulta que hay, digamos, 22 queries
+  semánticamente distintas, entonces un detector evaluado sobre 49 está reportando
+  sobre una muestra con réplicas y su intervalo de confianza es más angosto de lo
+  que merece. **No bloquea el etiquetado:** etiquetar 49 strings es correcto y
+  necesario; lo que no es correcto es tratar 49 como 49 observaciones independientes
+  al calcular métricas.
+
+### Lote de verificación del corpus: decisiones pre-registradas
+
+**Escritas el 29 de julio de 2026, antes de correr una sola medición.** No cambian
+con el resultado. Están aquí para que el resultado no pueda renegociar el criterio
+después de conocerse, que es la forma más fácil de convertir una medición en una
+justificación.
+
+1. **`validate_qualify_columns=True` se queda, salga el número que salga.** Lo que
+   `qualify` rechace es `not_analyzed`, y la cobertura se publica como **dato de
+   alcance**. No se afloja el flag para que suba el número de queries analizadas.
+   Un detector que analiza más porque dejó de validar no analiza mejor.
+2. **Si la corrección del multiplicador sale inerte en los 49, se queda**,
+   documentada como correcta e inerte en este corpus. No se revierte. Una
+   corrección que no cambia nada en el corpus actual sigue siendo correcta para el
+   set adversario, que es justamente donde van a vivir los `LEFT JOIN`.
+3. **Si un número propagado no cuadra con la base**, va nota de corrección fechada
+   en el ROADMAP **y** en la especificación. Nunca una edición silenciosa.
+4. **Si el hash de `portfolio.db` no cuadra, se para todo** y se avisa antes de
+   seguir con nada. Un corpus cuya base cambió no es un corpus.
+
+Los resultados del lote van a `evals/results/corpus_verification.md`, que es un
+archivo de resultados y **no se edita después**.
+
+#### Resultado del lote, en una tabla
+
+| Tarea | Resultado |
+|---|---|
+| 0 | Hash de la base **CUADRA**. El gate pasó |
+| 1 | `qualify` pasa **49 de 49**. Cero excepciones. Cobertura 100% |
+| 2 | Multiplicador (a) **40.0** no 41.3, (b) 1.0, (c) hay que forzar el hueco. **0 diferencias** `COUNT(*)` vs `COUNT(T.pk)` entre los pares medidos |
+| 2b | **El multiplicador de filas (40.0) no es el ratio de valor (41.285653)** |
+| 3 | Los tres números propagados **CUADRAN** |
+| 4 | `MAX`, `MIN`, `COUNT(DISTINCT)` no se mueven. `SUM`, `AVG`, `COUNT` sí |
+| 5 | La extracción quitó **un punto y coma final**, nada más. Corpus id 37 |
+| 6 | Las dos entradas de `no_rows` son **`WHERE` que no matchea**, no joins vacíos |
+| 7 | `uv lock --check` exit 0, 20 paquetes |
+
+Dos cosas del lote cambiaron el diseño y están anotadas como correcciones arriba: la
+distinción entre multiplicador de filas y ratio de valor, y la confirmación de que la
+corrección del numerador es inerte en este corpus pero no equivalente.
 
 ### Dependencia congelada: sqlglot 30.14.0
 
