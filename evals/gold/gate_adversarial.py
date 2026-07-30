@@ -64,15 +64,14 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 from txt2sql import catalog as catalog_mod  # noqa: E402
 from txt2sql import db, fanout  # noqa: E402
 
-GOLD = REPO_ROOT / "evals" / "gold"
-# Dos archivos, y son dos a propósito. `corpus_sql_adversarial.json` quedó
-# congelado en cuanto produjo una medición —el gate de 21 de 21 del commit
-# `b0de43d`— así que los casos nuevos van en un archivo aparte con la variable en
-# el nombre, nunca como una edición del congelado. El gate los corre juntos.
-CORPORA = (
-    GOLD / "corpus_sql_adversarial.json",
-    GOLD / "corpus_sql_adversarial_guards_20260730.json",
-)
+CORPUS = REPO_ROOT / "evals" / "gold" / "corpus_sql_adversarial.json"
+
+# Un solo archivo, y **crece**. El set adversario no es un artefacto congelado: no
+# registra un momento, registra qué modos de falla sabemos cubrir, y esa lista se
+# alarga cada vez que aparece uno nuevo. Lo que se congela son los archivos de
+# RESULTADOS y de ETIQUETAS, cuya interpretación depende de que no cambien.
+# El 21 de 21 histórico vive donde debe vivir un resultado de gate: en git y en el
+# mensaje del commit `b0de43d`.
 
 exp = sqlglot.exp
 
@@ -312,28 +311,26 @@ def main() -> int:
     database = db.db_path()
     print(f"sqlglot {sqlglot.__version__}   dialecto {fanout.DIALECT!r}")
 
-    cases: list[dict] = []
-    for path in CORPORA:
-        corpus = json.loads(path.read_text(encoding="utf-8"))
-        declared = corpus["case_count"]
-        if len(corpus["cases"]) != declared:
-            print(f"{path.name} declara {declared} casos y trae {len(corpus['cases'])}")
-            return 2
+    corpus = json.loads(CORPUS.read_text(encoding="utf-8"))
+    cases: list[dict] = corpus["cases"]
+    declared = corpus["case_count"]
+    if len(cases) != declared:
+        print(f"el corpus declara {declared} casos y trae {len(cases)}")
+        return 2
 
-        # Gate cero, por archivo. Decisión pre-registrada: si el hash no cuadra,
-        # se para todo. Un corpus cuya base cambió no es un corpus.
-        actual = db_sha256(database)
-        if actual != corpus["db_sha256"]:
-            print("\nEL HASH DE LA BASE NO CUADRA. Se para todo.")
-            print(f"  declarado en {path.name}: {corpus['db_sha256']}")
-            print(f"  medido en {database}:     {actual}")
-            return 2
+    # Gate cero. Decisión pre-registrada: si el hash no cuadra, se para todo. Un
+    # corpus cuya base cambió no es un corpus.
+    actual = db_sha256(database)
+    if actual != corpus["db_sha256"]:
+        print("\nEL HASH DE LA BASE NO CUADRA. Se para todo.")
+        print(f"  declarado en el corpus: {corpus['db_sha256']}")
+        print(f"  medido en {database}:   {actual}")
+        return 2
 
-        print(f"corpus  {path.relative_to(REPO_ROOT).as_posix()}  ({declared} casos)")
-        cases.extend(corpus["cases"])
-
-    print(f"hash de la base CUADRA: {db_sha256(database)[:16]}...")
-    print(f"total: {len(cases)} casos\n")
+    print(f"corpus  {CORPUS.relative_to(REPO_ROOT).as_posix()}  ({declared} casos)")
+    print(f"hash de la base CUADRA: {actual[:16]}...")
+    with_fixture = sum(1 for case in cases if case.get("fixture"))
+    print(f"contra portfolio.db: {len(cases) - with_fixture}  con fixture propio: {with_fixture}\n")
 
     base_conn = db.connect()
     base_cat = catalog_mod.load(base_conn)

@@ -62,9 +62,11 @@ Actualizado tras cerrar la rebanada 2.
    [`evals/results/ddl_only_n5.md`](../evals/results/ddl_only_n5.md) (control) y
    [`evals/results/values_text_maxcard20_n5.md`](../evals/results/values_text_maxcard20_n5.md)
    (experimental).
-3. **Detección de fan-out.** Redefinida tras la rebanada 2. Antes decía
-   "guardrails" y la pieza central era validación de esquema; **se descartó con
-   evidencia**. Ver abajo.
+3. **Detección de fan-out.** CERRADA el 30 de julio de 2026. Redefinida tras la
+   rebanada 2: antes decía "guardrails" y la pieza central era validación de
+   esquema; **se descartó con evidencia**. Cierre con lo medido, lo no medido y
+   la deuda en [Cierre de la rebanada 3](#cierre-de-la-rebanada-3). **Se cerró sin
+   etiquetas humanas**, así que no trae ninguna medida de acierto.
 4. **Eval harness** con gold set y N.
 5. **Ataques a escala.**
 6. **Conectar como tool del agente.**
@@ -240,6 +242,55 @@ que no se etiquetó mirando el output.
 >
 > **El holdout NO se tocó.** Nada que haga match con `evals/gold/*holdout*` se leyó ni
 > se abrió durante la etapa 3. Esa regla sigue intacta.
+
+### Cierre de la rebanada 3
+
+Escrito el 30 de julio de 2026. Las tres listas van juntas a propósito: una sin las
+otras dos miente por omisión.
+
+#### Lo que está medido
+
+| | |
+|---|---|
+| **Gate adversario** | **25 de 25**, con la precondición de cada caso evaluada **antes** del veredicto. Un caso que no puede discriminar falla, no pasa |
+| **Comportamiento sobre output real** | Las **49** entradas distintas de `corpus_sql.json`, corridas y descritas |
+| **Q4, config B** | **5 de 5** `inflated` / `fan_trap`, `row_multiplier` 40.0, y `value_inflation` 41.285653 sobre 14,388,050,000 contra 348,500,000 — la cifra que este proyecto cita desde la rebanada 2, reproducida desde cero |
+| **La corrección de la fórmula está viva** | C1 discrimina: la fórmula vigente da `14/14 = 1.0` y `clean`; la original daría `32/14 = 2.2857` y un falso `inflated`. **No es un test decorativo** |
+| **Los cuatro guards nuevos disparan** | Y la prueba negativa confirma que sin su guard cada caso se pone rojo |
+
+#### Lo que NO está medido
+
+- **Cero medidas de acierto. No existe una sola etiqueta humana.** Ni precision, ni
+  recall, ni tasa de nada. La etapa 2 no ocurrió y el detector se escribió antes,
+  con el invariante del orden de commits **quemado y anotado** arriba.
+- **Las 11 entradas `clean` no se auditaron una por una.** Puede haber fan-out real
+  ahí y esta rebanada no lo sabría.
+- **Cuatro guards no tienen blanco en el corpus real.** `WITHOUT ROWID`, columna que
+  sombrea `rowid`, agregado sobre fuente no-base y subconsulta correlacionada
+  aparecen **cero** veces en las 49. Se ejercitan solo contra casos escritos a mano,
+  dos de ellos con base propia en memoria porque son propiedades del catálogo y
+  ninguna cadena de SQL contra `portfolio.db` los alcanza.
+- **`deduplicated_value` disparó 0 de 25 antes de ensanchar la regla.** El caso
+  angosto original nunca aplicó sobre output real; el número que hoy se reporta
+  —6 de 25— existe porque la regla se corrigió el mismo día, no porque estuviera
+  bien especificada.
+- **La duplicación semántica del corpus sigue sin medir**, así que las 49 no son 49
+  observaciones independientes.
+
+#### La deuda
+
+**13 de 49 entradas caen en `not_analyzed` por `unattributable_aggregate`, y 3 de
+ellas son Q5 en la config B** —las ids 45, 46 y 48— que el ROADMAP documenta como
+portadoras del artefacto de fan-out. El detector alcanza 2 de esas 5.
+
+**Causa:** el multiplicador se define sobre una `T`, y `COUNT(*)` no nombra ninguna
+columna, así que no hay `T`. Lo mismo con `SUM(CASE WHEN ... THEN 1 ELSE 0 END)`,
+donde lo que se suma es una constante.
+
+**Camino para la rebanada 4:** sondear **todas** las tablas base de la fuente de
+filas en vez de deducir una sola `T`, y reportar **todas** las granularidades
+duplicadas. Está desarrollado, con lo que ese camino no resuelve solo, en
+[la sección 6 de "Para la rebanada 4"](#6-la-deuda-principal-que-deja-la-rebanada-3-count-no-tiene-tabla-a-la-que-atribuirse).
 
 ### El diseño del detector
 
@@ -916,6 +967,77 @@ porcentajes**, hasta que exista el gold set grande de la rebanada 4.
 Y hay una segunda razón para no publicar porcentajes que es independiente del N: la
 **duplicación semántica del corpus sigue sin medir**, así que las 49 entradas no son
 49 observaciones independientes.
+
+#### Hallazgo del 30 de julio de 2026: el holdout no está pendiente, está sin función
+
+Ésta es la conclusión que cierra la etapa 4, y no es que falte trabajo: es que **el
+trabajo que el holdout venía a hacer no existe.**
+
+Su función era detectar **afinado contra dev**. Para que eso se pueda medir, el
+detector tiene que haber visto una mitad más que la otra. **No la vio.** Se construyó
+contra dos cosas y ninguna es dev:
+
+| Contra qué se construyó | Exposición a dev y holdout |
+|---|---|
+| Los 25 casos adversarios, escritos a mano con respuesta declarada | **Ninguna de las dos.** No salen del corpus real ni entran a la estimación de nadie |
+| Una sonda estructural sobre **las 49 entradas completas** | **Uniforme.** Las dos mitades por igual |
+
+La sonda del corpus completo fue una decisión de la etapa 3 y hay que decirla en voz
+alta: para escribir el detector se midieron formas sintácticas —cuántas entradas
+traen `COUNT(*)` sobre un join, cuáles unen por algo que no es FK, cuántas agregan
+sobre una fuente no-base— **sobre las 49, sin partir.** Eso es exactamente lo que
+vuelve la exposición uniforme.
+
+**Consecuencia:** una diferencia de comportamiento entre dev y holdout hoy sería
+**ruido de muestreo entre dos mitades de 24 y 25, no overfitting.** Reportarla como
+evidencia de generalización sería inventar una conclusión: el experimento que la
+sostendría nunca se corrió.
+
+Y hay una segunda razón, más simple y anterior: **no existe una sola etiqueta
+humana**, ni en dev ni en holdout, así que no hay contra qué comparar en ninguna de
+las dos mitades.
+
+**El holdout sigue sellado y el patrón sigue vigente.** Nada que haga match con
+`evals/gold/*holdout*` se abrió durante la etapa 3. No se declara quemado ni se
+libera: se declara **sin función para este detector**, que es distinto.
+
+**Vuelve a tener función** en cuanto una rebanada futura construya un detector
+afinado contra dev —umbrales elegidos mirando resultados, reglas ajustadas caso por
+caso, cualquier cosa que use la mitad dev como señal de diseño. Ese día el holdout
+mide justo lo que fue diseñado para medir, y por eso se queda sellado en vez de
+gastarse ahora en una pregunta que no tiene.
+
+### Qué se congela: un registro de un momento, no un set de tests
+
+**Corrección del 30 de julio de 2026.** La regla decía que `corpus_sql.json` y
+`corpus_sql_adversarial.json` quedaban congelados en cuanto se commitearan, los dos
+por igual. **Estaba mal escrita**, y se notó al querer agregarle al set adversario
+cuatro casos para guards que nunca se habían ejercitado: la regla obligaba a
+partirlo en un archivo por fecha, lo cual da un peor set de tests y no protege nada.
+
+La distinción que faltaba:
+
+| Se congela | No se congela |
+|---|---|
+| **Registros de un momento.** Un archivo de resultados, una worksheet con etiquetas, una muestra extraída de corridas concretas | **Un set de tests.** No registra un momento: registra qué modos de falla sabemos cubrir |
+| Su interpretación **depende** de que no cambien: sobrescribirlos destruye la comparación que los hace significar algo | Está **hecho para crecer**, cada vez que aparece un modo de falla sin cubrir |
+
+Por eso los dos archivos que la regla nombraba juntos van por caminos distintos:
+
+- **`corpus_sql.json` sigue congelado, sin excepción.** No es un set de tests: es
+  una muestra de output real del modelo, extraída de corridas concretas, y registra
+  un momento. Igual las worksheets en cuanto tengan una etiqueta escrita.
+- **`corpus_sql_adversarial.json` crece.** Cada caso nuevo va con nota fechada
+  explicando qué modo de falla cubre y por qué no estaba.
+
+**El resultado histórico no se pierde por dejar crecer el set.** El 21 de 21 vive en
+git y en el mensaje del commit `b0de43d`, que es donde debe vivir el resultado de un
+gate. Que hoy el gate reporte 25 de 25 es lo correcto: el set creció. Un número de
+gate no es una medición congelada, es el estado de una suite en un commit.
+
+Es la misma lógica de la sección de abajo llevada un paso más lejos: aquélla dice
+que el congelado protege mediciones y empieza en el primer uso; ésta dice **qué
+artefactos son mediciones y cuáles nunca lo fueron.**
 
 ### El congelado empieza en el primer uso, no en el primer commit
 
