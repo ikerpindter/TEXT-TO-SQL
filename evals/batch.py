@@ -16,6 +16,24 @@ criterios escritos ANTES de correr en el archivo de resultados.
 
 Las corridas van a evals/runs/. Los archivos de evals/results/ son el análisis
 escrito a mano y están congelados; éstos son la materia prima.
+
+EL BLOQUE `fanout`, DESDE LA REBANADA 3
+----------------------------------------
+Cada registro lleva ahora el veredicto del detector de fan-out, en el JSON y no
+solo en la CLI, porque la rebanada 4 necesita scorear automático y en la 6 esto
+lo consume un agente, y un agente no lee prosa.
+
+**Solo aplica a corridas NUEVAS.** Los JSON que ya viven en `evals/runs/` están
+congelados y no se reescriben: son la materia prima de mediciones publicadas, y
+recalcularles un campo hoy los volvería una mezcla de dos fechas. El propio
+script ya se niega a sobrescribir un archivo que exista, así que la protección no
+depende de que alguien se acuerde. Si algún día hace falta el veredicto sobre el
+corpus viejo, sale de correr el detector aparte —como
+`evals/gold/run_detector_corpus_20260730.py`— y va a su propio archivo.
+
+**El detector no puede tumbar una corrida.** Una llamada a la API ya se pagó
+cuando esto se ejecuta; perder el registro por un fallo del guardrail sería
+carísimo y absurdo. Si truena, el campo guarda el error y la corrida sigue.
 """
 
 from __future__ import annotations
@@ -31,7 +49,8 @@ from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from txt2sql import db, generate, schema as schema_mod  # noqa: E402
+from txt2sql import catalog as catalog_mod  # noqa: E402
+from txt2sql import db, fanout, generate, schema as schema_mod  # noqa: E402
 
 RUNS_DIR = Path(__file__).resolve().parent / "runs"
 
@@ -84,6 +103,21 @@ def execute(conn: sqlite3.Connection, sql: str) -> dict:
     }
 
 
+def check_fanout(
+    conn: sqlite3.Connection, sql: str, cat: catalog_mod.Catalog
+) -> dict:
+    """El bloque estructurado del detector. Un fallo es un dato, no una excepción.
+
+    La llamada a la API ya se pagó cuando esto corre, así que el guardrail no
+    puede costar el registro. Pero tampoco se calla: si truena, el error queda
+    escrito en el propio campo.
+    """
+    try:
+        return fanout.analyze(sql, conn, cat).to_dict()
+    except Exception as exc:  # noqa: BLE001 - el guardrail no puede tumbar la corrida
+        return {"verdict": None, "error": f"{type(exc).__name__}: {exc}"}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="batch")
     parser.add_argument("--config", required=True, choices=sorted(CONFIGS))
@@ -121,12 +155,16 @@ def main() -> int:
 
     records = []
     total_cost = 0.0
+    # El catálogo se lee una vez: son PRAGMAs sobre la misma conexión read-only y
+    # no cambian entre corridas.
+    cat = catalog_mod.load(conn)
 
     for q_index, question in enumerate(QUESTIONS, start=1):
         print(f"\nQ{q_index}  {question}")
         for run in range(1, args.n + 1):
             result = generate.generate_sql(question, schema_text, model=args.model)
             outcome = execute(conn, result.sql)
+            fanout_block = check_fanout(conn, result.sql, cat)
             cost = result.cost_usd or 0.0
             total_cost += cost
 
@@ -143,6 +181,7 @@ def main() -> int:
                     "reasoning_tokens": result.reasoning_tokens,
                     "cost_usd": result.cost_usd,
                     "result": outcome,
+                    "fanout": fanout_block,
                 }
             )
 
@@ -150,9 +189,10 @@ def main() -> int:
                 shape = f"ERROR {outcome['error'][:40]}"
             else:
                 shape = f"{outcome['row_count']} filas"
+            verdict = fanout_block.get("verdict") or "fanout ERROR"
             print(
                 f"  run {run}  {result.input_tokens:>5}+{result.output_tokens:<4} tok"
-                f"  ${cost:.6f}  {shape}"
+                f"  ${cost:.6f}  {shape}  {verdict}"
             )
 
     payload = {

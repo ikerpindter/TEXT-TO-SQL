@@ -1364,6 +1364,63 @@ guardado en `evals/runs/`.
 
 Citar el caso, no el porcentaje.
 
+### 6. La deuda principal que deja la rebanada 3: `COUNT(*)` no tiene tabla a la que atribuirse
+
+**Medido el 30 de julio de 2026, al cerrar la etapa 3.**
+
+| | |
+|---|---|
+| Entradas que caen en `not_analyzed` por `unattributable_aggregate` | **13 de 49** |
+| De ésas, entradas de Q5 en la config B | **3** (ids 45, 46 y 48) |
+
+Las tres de Q5 son el caso que duele: el ROADMAP documenta que **las 5 corridas de
+Q5 en la config B traen el artefacto de fan-out**, y el detector alcanza 2. Las
+otras 3 se declaran no analizadas.
+
+**La causa es una sola y es estructural.** El multiplicador se define sobre una `T`:
+`COUNT(T.rowid) / COUNT(DISTINCT T.rowid)`. `COUNT(*)` no nombra ninguna columna, así
+que no hay `T`, y la misma pared aparece con `SUM(CASE WHEN ... THEN 1 ELSE 0 END)`,
+donde lo que se suma es una constante. **El detector no falla por no saber medir,
+falla por no saber a qué tabla apuntarle.**
+
+Las dos salidas fáciles ya se descartaron con medición y no hay que volver a
+intentarlas:
+
+- **Callarlo y devolver `clean`** marcaba `clean` esas tres entradas de Q5. Es un
+  miss, no un hueco.
+- **Marcarlo contra cualquier tabla duplicada** produce un falso positivo sobre
+  `COUNT(*) FROM homes JOIN communities`, que es correctísimo: `communities` se
+  duplica y el conteo de casas no.
+
+#### El camino, y es un cambio de forma del detector, no un parche
+
+**Sondear TODAS las tablas base de la fuente de filas, en vez de buscar una sola
+`T`, y reportar todas las granularidades duplicadas.**
+
+Hoy `T` sale del agregado hacia afuera: se mira qué columna se agrega y se deduce la
+tabla. El camino es al revés: la fuente de filas ya se conoce, tiene un conjunto
+finito de tablas base, y **cada una tiene un multiplicador medible con la misma
+consulta que ya se corre**. Para `COUNT(*) FROM homes JOIN communities` eso daría
+`homes` 1.0 y `communities` 39.7, y esos dos números **juntos** dicen algo que
+ninguno dice solo: el conteo está al grano de `homes`, y `homes` no se duplica.
+
+Lo que hay que resolver, y es el trabajo real de la rebanada 4:
+
+1. **Qué se le reporta al usuario cuando hay varias granularidades.** Un `COUNT(*)`
+   sobre una fuente donde una tabla duplica y otra no **no** es "inflado"; es "el
+   conteo está al grano de X". Nombrar el grano es la afirmación útil, y hoy no
+   existe en el vocabulario de salida.
+2. **Si `COUNT(*)` merece un veredicto propio** en vez de reutilizar los cinco. La
+   respuesta honesta hoy es que no se sabe, y eso se decide con datos, no antes.
+3. **El costo.** Pasa de dos consultas por hallazgo a dos por tabla base de la
+   fuente. Sobre este esquema son 4 tablas y da igual; conviene medirlo antes de
+   asumir que siempre dará igual.
+
+**No se construye ahora.** La rebanada 3 es detección de fan-out y esto es un
+rediseño de cómo se elige `T`, o sea exactamente el crecimiento por inercia que el
+alcance prohíbe. Queda escrito, con su medición y su denominador, para que exista
+cuando toque.
+
 ## Protocolo de archivos congelados
 
 Un archivo de resultados es un registro de una medición que ya ocurrió. No es
