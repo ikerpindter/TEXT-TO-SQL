@@ -1,0 +1,204 @@
+"""Genera las worksheets ciegas de etiquetado. Desechable, fechado.
+
+    uv run python evals/gold/make_worksheets_20260729.py
+
+Read-only sobre la base y los artefactos. Escribe las dos worksheets y el keymap,
+y se niega a sobrescribir cualquiera de los tres.
+
+POR QUE LA WORKSHEET NO LLEVA EL id DEL CORPUS
+----------------------------------------------
+La especificacion pedia "id, SQL formateado, LABEL:, SHAPE:". **El id del corpus
+filtra la config**, que es una de las seis cosas que la worksheet no puede mostrar.
+
+Medido: los ids 1-25 son todos `ddl_only` y los ids 26-49 son todos
+`values_text_maxcard20`, porque `extract_corpus.py` recorre los archivos de
+corridas en orden de nombre. La regla "id <= 25 entonces config A" acierta **49 de
+49**. Imprimir el id equivale a imprimir la config.
+
+Por eso la worksheet lleva una **clave opaca** —DEV-01, HOLD-07— y el mapeo a los
+ids vive aparte en `worksheet_keymap.json`. El keymap se commitea porque es
+contabilidad, no etiquetas: hace falta para unir las etiquetas de vuelta al corpus.
+El ciego sigue dependiendo de la disciplina de no ir a abrirlo, igual que el
+holdout.
+
+LO QUE LA WORKSHEET NO MUESTRA
+------------------------------
+pregunta, indice de pregunta, config, resultado ejecutado, categoria, row_count, y
+el id del corpus por lo de arriba.
+
+LIMITE HONESTO DEL CIEGO
+------------------------
+El SQL es el artefacto a etiquetar y no se puede redactar sin destruir la tarea.
+Los literales delatan la config a quien conozca el proyecto: `'Lennar'` solo
+aparece en la config A y `'Lennar Corporation'` solo en la B. **El ciego es parcial
+por construccion**, y eso se anota en lugar de fingir que es total.
+"""
+
+from __future__ import annotations
+
+import json
+import random
+import sys
+from datetime import date
+from pathlib import Path
+
+GOLD_DIR = Path(__file__).resolve().parent
+REPO_ROOT = GOLD_DIR.parents[1]
+sys.path.insert(0, str(REPO_ROOT / "src"))
+from txt2sql import db, schema as schema_mod  # noqa: E402
+
+CORPUS = GOLD_DIR / "corpus_sql.json"
+SPLIT = GOLD_DIR / "split_assignment.json"
+KEYMAP = GOLD_DIR / "worksheet_keymap.json"
+OUT = {"dev": GOLD_DIR / "worksheet_dev.md",
+       "holdout": GOLD_DIR / "worksheet_holdout.md"}
+
+SEED = 20260729
+
+VERDICTS = ["not_analyzed", "no_contributing_rows", "clean",
+            "shape_no_inflation", "inflated"]
+SHAPES = ["fan_trap", "chasm_trap", "unexplained", "-"]
+
+CRITERIA = """\
+## Criterio, resumido
+
+**Fan-out** es una agregacion que cae sobre una columna del lado "uno" de un join
+uno-a-muchos. El join replica esa fila una vez por cada fila del lado "muchos", y la
+agregacion suma el mismo valor varias veces.
+
+Estas juzgando **si el SQL infla por duplicacion de filas**. NO estas juzgando si el
+query contesta bien la pregunta: no sabes cual era la pregunta, y es a proposito.
+
+### Los cinco veredictos, en orden de precedencia
+
+| Veredicto | Cuando |
+|---|---|
+| `not_analyzed` | No se puede analizar: self join, window function, UNION/INTERSECT/EXCEPT, join que no sigue una FK declarada, o columna ambigua. |
+| `no_contributing_rows` | La tabla agregada no aporta ni una fila a la fuente. El multiplicador es indefinido. |
+| `clean` | Analizable y sin forma de fan-out presente. |
+| `shape_no_inflation` | La forma esta presente pero no duplica: el multiplicador es 1.0. |
+| `inflated` | La forma esta presente y duplica. |
+
+**El primero que aplica gana.** Si hay varios hallazgos, manda el peor caso.
+
+### Las dos formas
+
+- `fan_trap`: se agrega una columna del lado "uno" despues de unir al lado "muchos".
+- `chasm_trap`: dos ramas uno-a-muchos desde un ancestro comun, unidas entre si.
+  **Las ramas pueden tener mas de un salto.**
+- `unexplained`: hay duplicacion pero no encaja limpio en ninguna de las dos.
+- `-`: sin forma. Va con `clean` y con `not_analyzed`.
+
+### Reglas que no dependen de juicio
+
+- Cualquier agregado con `DISTINCT` es inmune. Tambien `MAX` y `MIN`.
+- Sensibles a duplicacion: `SUM`, `AVG`, `COUNT` sin DISTINCT, `TOTAL`.
+- Una query **sin agregados** no tiene forma: va `clean`.
+- "Forma presente" exige **las dos cosas juntas**: la estructura de joins **y** un
+  agregado sensible sobre una columna afectada.
+- Un CTE que pre-agrega a una fila por llave **no duplica**.
+
+### Si dudas
+
+Escribe la etiqueta que creas y agrega una nota en la linea `NOTA:`. Un desacuerdo
+registrado vale mas que una etiqueta forzada. **No se promedian los desacuerdos.**
+"""
+
+
+def main() -> int:
+    existing = [p for p in [KEYMAP, *OUT.values()] if p.exists()]
+    if existing:
+        print("ya existen, borralos a mano si de verdad quieres rehacerlos:")
+        for p in existing:
+            print(f"  {p}")
+        return 1
+
+    entries = {e["id"]: e for e in
+               json.loads(CORPUS.read_text("utf-8"))["entries"]}
+    split = json.loads(SPLIT.read_text("utf-8"))
+
+    conn = db.connect()
+    ddl = schema_mod.dump_schema(conn, with_values=False)
+
+    rng = random.Random(SEED)
+    keymap: dict[str, int] = {}
+
+    for side, prefix in (("dev", "DEV"), ("holdout", "HOLD")):
+        ids = sorted(split[side])
+        rng.shuffle(ids)
+
+        lines = [
+            f"# Worksheet ciega de etiquetado: {side}",
+            "",
+            f"Generada el {date.today().isoformat()}. "
+            f"{len(ids)} entradas del corpus real.",
+            "",
+            "**Llena `LABEL:` y `SHAPE:` en cada bloque. No borres nada mas.**",
+            "",
+            "Esta worksheet no muestra la pregunta, el indice de pregunta, la config,",
+            "el resultado ejecutado, la categoria, el row_count, ni el id del corpus.",
+            "Las claves son opacas a proposito: el id del corpus filtra la config.",
+            "",
+            "El set adversario **no esta aqui** y nunca lo estara: trae su respuesta",
+            "declarada por diseno y vive en `corpus_sql_adversarial.json`.",
+            "",
+            f"Vocabulario de `LABEL:` -> {', '.join(VERDICTS)}",
+            f"Vocabulario de `SHAPE:` -> {', '.join(SHAPES)}",
+            "",
+            "---",
+            "",
+            "## Esquema completo de la base",
+            "",
+            "```sql",
+            ddl,
+            "```",
+            "",
+            "---",
+            "",
+            CRITERIA,
+            "---",
+            "",
+            "## Casos",
+            "",
+        ]
+
+        for i, entry_id in enumerate(ids, start=1):
+            key = f"{prefix}-{i:02d}"
+            keymap[key] = entry_id
+            lines += [
+                f"### {key}",
+                "",
+                "```sql",
+                entries[entry_id]["sql"],
+                "```",
+                "",
+                "```",
+                "LABEL:",
+                "SHAPE:",
+                "NOTA:",
+                "```",
+                "",
+            ]
+
+        OUT[side].write_text("\n".join(lines), "utf-8")
+        print(f"{side:<8} {len(ids):>3} casos -> {OUT[side].name}")
+
+    KEYMAP.write_text(json.dumps({
+        "generated": date.today().isoformat(),
+        "seed": SEED,
+        "purpose": "Une las claves opacas de las worksheets con los ids del corpus. "
+                   "Es contabilidad, no etiquetas. La worksheet no lleva el id "
+                   "porque el id filtra la config: ids 1-25 son ddl_only y 26-49 "
+                   "son values_text_maxcard20, o sea 49 de 49 predecibles.",
+        "blind_limit": "El ciego es parcial por construccion. Los literales del SQL "
+                       "delatan la config a quien conozca el proyecto ('Lennar' vs "
+                       "'Lennar Corporation'). No se puede redactar el SQL sin "
+                       "destruir la tarea de etiquetado.",
+        "keymap": dict(sorted(keymap.items())),
+    }, ensure_ascii=False, indent=2) + "\n", "utf-8")
+    print(f"keymap   {len(keymap):>3} claves -> {KEYMAP.name}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
