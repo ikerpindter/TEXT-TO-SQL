@@ -38,15 +38,32 @@ detector nunca miró.
 
 TRES DECISIONES QUE LA ESPECIFICACIÓN NO TRAÍA, TOMADAS EL 2026-07-30
 ----------------------------------------------------------------------
-- **`COUNT(*)` no se atribuye.** No tiene columna, así que no tiene `T` y el
-  multiplicador no es calculable. Por la letra del ROADMAP —"agregado sensible
-  sobre una columna afectada"— eso es *sin forma*, o sea `clean`. Pero un `clean`
-  mudo ahí afirmaría de más, así que el agregado se nombra en
-  `unattributed_aggregates` y el render lo dice. Toca **12 de las 49** entradas del
-  corpus. Las dos alternativas se descartaron con razón: callarlo es afirmar
-  `clean` sin verificarlo, y marcarlo produce un falso positivo medido sobre
+- **`COUNT(*)` no se atribuye, y si es lo único que había, la query va a
+  `not_analyzed`.** No tiene columna, así que no tiene `T` y el multiplicador no es
+  calculable. Marcarlo produciría un falso positivo medido sobre
   `COUNT(*) FROM homes JOIN communities`, donde la duplicación de `communities` no
-  toca al conteo de casas.
+  toca al conteo de casas; callarlo afirmaría `clean` sin haber verificado nada.
+
+  > **Corrección del 2026-07-30, y salió de medir, no de razonar.** La primera
+  > versión de esta regla devolvía `clean` y nombraba el agregado en un campo
+  > aparte. Corriendo sobre el corpus, eso marcaba `clean` **tres entradas de Q5 en
+  > la config B** —ids 45, 46 y 48— que el ROADMAP documenta como portadoras del
+  > artefacto de fan-out. Un `clean` sobre la falla que esta rebanada existe para
+  > cazar no es un hueco aceptable, es un miss. Ahora, cuando no hay ningún
+  > hallazgo y quedó un agregado sin verificar, el veredicto es `not_analyzed` con
+  > razón `unattributable_aggregate`.
+  >
+  > **No basta con volverlo `not_analyzed` siempre**, y eso también se midió: la id
+  > 47 trae un `COUNT(*)` **y** un `SUM(financials.backlog_value)` que sí se puede
+  > atribuir y que sale inflado 51.5x. Anular la query entera por el `COUNT(*)`
+  > tiraría una detección verdadera. Si se pudo medir algo, se reporta, y el
+  > agregado no atribuible se nombra al lado.
+  >
+  > Esto resuelve una tensión real dentro del propio ROADMAP: la definición de
+  > "forma presente" —agregado sensible **sobre una columna afectada**— daría
+  > `clean`, y el principio de que `not_analyzed` nunca se degrada a `clean` da
+  > `not_analyzed`. Gana el principio, porque la definición es una precisión sobre
+  > qué cuenta como forma y el principio es sobre qué se puede afirmar.
 - **Atribución por posición de VALOR, no por columna presente.** En
   `SUM(CASE WHEN c.name IN (...) THEN f.homes_delivered ELSE 0 END)` —ids 4 y 26 del
   corpus— `c.name` está en posición de predicado y `f.homes_delivered` en posición
@@ -80,6 +97,55 @@ from txt2sql import catalog as catalog_mod
 exp = sqlglot.exp
 
 DIALECT = "sqlite"
+
+
+def _arg_key(node_type: type, *candidates: str) -> str:
+    """La llave real de un argumento, verificada contra `arg_types` al importar.
+
+    **La llave del `FROM` es `from_` y la del `WITH` es `with_`, las dos con guion
+    bajo**, así que `args.get("from")` y `args.get("with")` devuelven `None` **en
+    silencio** y, peor, `set("with", ...)` es un no-op que no rinde nada y no se
+    queja. Ese no-op costó una `OperationalError` en la id 16 del corpus: el cuerpo
+    de un CTE que se une a un CTE hermano salía sin cláusula `WITH` y la sonda
+    tronaba con `no such table`.
+
+    La lección del repo era "no accedas por el nombre de la llave sin verificarlo".
+    Ésta es la versión ejecutable: si un salto de versión mueve el nombre, esto
+    **truena al importar** en vez de devolver `None` para siempre.
+    """
+    for candidate in candidates:
+        if candidate in node_type.arg_types:
+            return candidate
+    raise RuntimeError(
+        f"ninguna de las llaves {candidates} existe en {node_type.__name__}.arg_types."
+        f" Las que hay: {sorted(node_type.arg_types)}"
+    )
+
+
+WITH_KEY = _arg_key(exp.Select, "with_", "with")
+
+# Las demás llaves que este módulo toca. Se verifican al importar por la misma
+# razón: una que deje de existir haría que el detector, por ejemplo, no quitara el
+# GROUP BY de la sonda y midiera el multiplicador del primer grupo creyendo que es
+# el global.
+for _key in (
+    "group",
+    "having",
+    "order",
+    "limit",
+    "offset",
+    "distinct",
+    "qualify",
+    "sort",
+    "cluster",
+    "distribute",
+    "windows",
+    "joins",
+    "where",
+    "expressions",
+):
+    _arg_key(exp.Select, _key)
+del _key
 
 # --- Los cinco veredictos, en orden de precedencia -------------------------
 NOT_ANALYZED = "not_analyzed"
@@ -119,6 +185,7 @@ REASON_NON_BASE_TABLE = "non_base_table"
 REASON_WITHOUT_ROWID = "without_rowid"
 REASON_ROWID_SHADOWED = "rowid_shadowed"
 REASON_PROBE_FAILED = "probe_failed"
+REASON_UNATTRIBUTABLE = "unattributable_aggregate"
 
 CRITERIA_REASONS = frozenset(
     {
@@ -234,6 +301,33 @@ def _base_sources(scope) -> dict[str, exp.Table]:
         seen.add(id(source))
         out[name] = source
     return out
+
+
+def _source_arity(select: exp.Select) -> int:
+    """Cuántas fuentes tiene la fuente de filas: el FROM más los JOINs.
+
+    El acceso al FROM va por `find(exp.From)` y **no** por `args.get("from")`: la
+    llave es `from_`, con guion bajo, así que la versión sin verificar devuelve
+    `None` en silencio y un detector escrito así trataría todas las queries como si
+    no tuvieran FROM sin quejarse una sola vez.
+    """
+    return (1 if select.find(exp.From) is not None else 0) + len(
+        select.args.get("joins") or []
+    )
+
+
+def _enclosing_with(node: exp.Expression) -> exp.With | None:
+    """El `WITH` que define las fuentes visibles desde este nodo, si lo hay."""
+    current = node.parent
+    while current is not None:
+        if isinstance(current, exp.With):
+            return current
+        if isinstance(current, exp.Select):
+            with_clause = current.args.get(WITH_KEY)
+            if with_clause is not None:
+                return with_clause
+        current = current.parent
+    return None
 
 
 def _in_projection(node: exp.Expression) -> bool:
@@ -603,7 +697,14 @@ def static_scan(sql: str, cat: catalog_mod.Catalog) -> StaticScan:
         edges = _edges_for_scope(scope, cat)
         # Un scope con una sola fuente no puede duplicar filas por join, así que no
         # hay forma que buscar y tampoco hay nada que verificar contra la base.
-        single_source = len({id(source) for source in scope.sources.values()}) < 2
+        #
+        # **No se cuenta con `scope.sources`**, y esto costó un falso
+        # `not_analyzed`: `sources` incluye los CTEs DECLARADOS aunque el FROM no
+        # los use. La id 38 declara dos CTEs y consume uno, así que `sources` decía
+        # 2 fuentes donde el FROM tiene 1, el scope parecía tener join, y el
+        # agregado sobre el CTE disparaba el guard de tabla no-base. La aridad real
+        # de la fuente de filas es FROM más JOINs y nada más.
+        single_source = _source_arity(select) < 2
         has_group_by = bool(select.args.get("group"))
 
         for node, function, argument in _aggregates(scope):
@@ -699,17 +800,25 @@ def row_source(select: exp.Select, root: exp.Expression | None) -> exp.Select:
     detector roto podría hacer pasar sus propias precondiciones.
 
     Si el scope vive dentro de un CTE, copiarlo lo desprende del `WITH` que define
-    sus fuentes, así que el `WITH` de la raíz se vuelve a colgar. Un CTE de más en
-    la cláusula no cuesta nada: SQLite ignora los que no se usan.
+    sus fuentes, así que hay que volver a colgárselo. Un CTE de más en la cláusula
+    no cuesta nada: SQLite ignora los que no se usan.
+
+    **El `WITH` se busca subiendo por los padres del nodo original**, no en el
+    argumento `root`. Costó una `OperationalError` en la id 38 del corpus: el
+    cuerpo de un CTE que se une a otro CTE hermano quedaba sin la cláusula y la
+    sonda tronaba con `no such table`. Subir por el árbol funciona sin importar qué
+    sea la raíz; `root` queda como respaldo.
     """
     probe = select.copy()
     for key in _STRIP_KEYS:
         if probe.args.get(key) is not None:
             probe.set(key, None)
-    if probe.args.get("with") is None and isinstance(root, exp.Select):
-        with_clause = root.args.get("with")
+    if probe.args.get(WITH_KEY) is None:
+        with_clause = _enclosing_with(select)
+        if with_clause is None and isinstance(root, exp.Select):
+            with_clause = root.args.get(WITH_KEY)
         if with_clause is not None:
-            probe.set("with", with_clause.copy())
+            probe.set(WITH_KEY, with_clause.copy())
     return probe
 
 
@@ -780,9 +889,12 @@ def _deduplicated_value(
     con NULL, y `SUM` y `COUNT` la ignoran igual que ignoran cualquier NULL.
     """
     inner = row_source(select, root)
-    with_clause = inner.args.get("with")
+    with_clause = inner.args.get(WITH_KEY)
     if with_clause is not None:
-        inner.set("with", None)
+        # El `WITH` se sube al query de afuera en vez de quedarse dentro del
+        # paréntesis, para no depender de que el motor acepte una cláusula `WITH`
+        # dentro de una subconsulta.
+        inner.set(WITH_KEY, None)
 
     alias_sql = _quoted(alias)
     rowid_column = sqlglot.parse_one(
@@ -947,6 +1059,28 @@ def analyze(
         )
 
     _fill_values(conn, scan, findings)
+
+    if not findings and scan.unattributed_aggregates:
+        # Nada que reportar Y un agregado sensible que no se pudo verificar. El
+        # veredicto NO puede ser `clean`: `clean` afirma que se midió y no se
+        # encontró duplicación, y sobre este agregado no se midió nada.
+        #
+        # **La regla se corrigió con evidencia, el 2026-07-30.** La primera versión
+        # dejaba pasar estas queries como `clean` nombrando el agregado aparte, y
+        # medido sobre el corpus eso escondía **tres entradas de Q5 en la config B**
+        # —ids 45, 46 y 48— que el ROADMAP documenta como portadoras del artefacto
+        # de fan-out. Un `clean` sobre la falla que esta rebanada existe para cazar
+        # es exactamente el "degradar a clean lo que no verificamos" que la
+        # especificación prohíbe.
+        return FanoutResult(
+            verdict=NOT_ANALYZED,
+            reason=REASON_UNATTRIBUTABLE,
+            reason_detail=(
+                "sin columna a la que atribuir la duplicación: "
+                + ", ".join(scan.unattributed_aggregates)
+            ),
+            unattributed_aggregates=scan.unattributed_aggregates,
+        )
 
     if not findings:
         verdict = CLEAN
