@@ -689,8 +689,14 @@ _STRIP_KEYS = (
 )
 
 
-def _row_source(select: exp.Select, root: exp.Expression | None) -> exp.Select:
+def row_source(select: exp.Select, root: exp.Expression | None) -> exp.Select:
     """La fuente de filas de un scope, lista para colgarle otra lista de SELECT.
+
+    Es público a propósito: el gate del set adversario mide sus precondiciones
+    sobre esta misma fuente de filas, pero con sus propias consultas y contra sus
+    propias constantes declaradas. Si el gate reconstruyera la fuente por su
+    cuenta estaría probando otra query, y si midiera llamando a `analyze` un
+    detector roto podría hacer pasar sus propias precondiciones.
 
     Si el scope vive dentro de un CTE, copiarlo lo desprende del `WITH` que define
     sus fuentes, así que el `WITH` de la raíz se vuelve a colgar. Un CTE de más en
@@ -729,7 +735,7 @@ def _probe_counts(
     El `COUNT(*)` va aparte porque es lo único que separa los dos subcasos de
     `no_contributing_rows`: fuente vacía contra `T` que no aporta.
     """
-    probe = _row_source(select, root)
+    probe = row_source(select, root)
     alias_sql = _quoted(alias)
     probe.set(
         "expressions",
@@ -750,7 +756,7 @@ def _reported_value(
     node: exp.Expression,
 ):
     """El valor del agregado tal como salió: sobre la fuente con duplicación."""
-    probe = _row_source(select, root)
+    probe = row_source(select, root)
     probe.set("expressions", [node.copy()])
     return conn.execute(probe.sql(dialect=DIALECT)).fetchone()[0]
 
@@ -773,7 +779,7 @@ def _deduplicated_value(
     rowid ya es único. Las filas sin match de un `LEFT JOIN` colapsan en una sola
     con NULL, y `SUM` y `COUNT` la ignoran igual que ignoran cualquier NULL.
     """
-    inner = _row_source(select, root)
+    inner = row_source(select, root)
     with_clause = inner.args.get("with")
     if with_clause is not None:
         inner.set("with", None)
