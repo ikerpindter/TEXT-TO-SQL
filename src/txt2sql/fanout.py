@@ -245,6 +245,7 @@ class Candidate:
     many_side: str | None
     join_path: tuple[str, ...]
     has_group_by: bool
+    columns: tuple[str, ...]
     select: exp.Select = field(repr=False)
     argument: exp.Expression | None = field(default=None, repr=False)
     node: exp.Expression | None = field(default=None, repr=False)
@@ -760,6 +761,17 @@ def static_scan(sql: str, cat: catalog_mod.Catalog) -> StaticScan:
                         many_side=many_side,
                         join_path=path,
                         has_group_by=has_group_by,
+                        # Solo las columnas de ESTA tabla: es lo que el render
+                        # necesita para nombrar qué se sumó de más.
+                        columns=tuple(
+                            sorted(
+                                {
+                                    f"{source.name}.{column.name}"
+                                    for column in columns
+                                    if column.table == alias
+                                }
+                            )
+                        ),
                         select=select,
                         argument=argument,
                         node=node,
@@ -933,6 +945,7 @@ class Finding:
     one_side: str | None
     many_side: str | None
     join_path: tuple[str, ...]
+    columns: tuple[str, ...]
     row_multiplier: float | None
     multiplier_scope: str
     grouped: bool
@@ -953,6 +966,7 @@ class Finding:
             "one_side": self.one_side,
             "many_side": self.many_side,
             "join_path": list(self.join_path),
+            "columns": list(self.columns),
             "row_multiplier": self.row_multiplier,
             "multiplier_scope": self.multiplier_scope,
             "grouped": self.grouped,
@@ -1121,6 +1135,7 @@ def _make_finding(
         one_side=candidate.one_side,
         many_side=candidate.many_side,
         join_path=candidate.join_path,
+        columns=candidate.columns,
         row_multiplier=_round(row_multiplier),
         # El multiplicador se calcula global sobre la fuente de filas, nunca por
         # grupo. Con GROUP BY eso prueba que EXISTE duplicación en algún lugar del

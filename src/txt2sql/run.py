@@ -17,7 +17,7 @@ import sys
 
 from dotenv import load_dotenv
 
-from txt2sql import db, generate, schema as schema_mod
+from txt2sql import db, fanout, fanout_render, generate, schema as schema_mod
 
 MAX_COL = 40
 
@@ -50,6 +50,23 @@ def print_table(columns: list[str], rows: list[tuple]) -> None:
         print(line(row))
 
     print(f"\n({len(rows)} fila{'s' if len(rows) != 1 else ''})")
+
+
+def fanout_check(sql: str, conn: sqlite3.Connection) -> str:
+    """El bloque del detector de fan-out, o por qué no salió.
+
+    Si el detector truena, la CLI **no** se cae: la respuesta ya se imprimió y
+    matarla por un fallo del guardrail sería peor que no tener guardrail. Pero
+    tampoco se calla, porque un chequeo que falla en silencio se lee igual que uno
+    que pasó.
+    """
+    try:
+        return fanout_render.render(fanout.analyze(sql, conn))
+    except Exception as exc:  # noqa: BLE001 - el guardrail no puede tumbar la CLI
+        return (
+            f"[i] el chequeo de filas repetidas falló: {type(exc).__name__}: {exc}\n"
+            f"    No es que esté bien: es que no se pudo revisar."
+        )
 
 
 def main() -> int:
@@ -115,6 +132,11 @@ def main() -> int:
     except sqlite3.Error as exc:
         print(f"el SQL falló al ejecutarse: {type(exc).__name__}: {exc}")
         exit_code = 2
+    else:
+        # Marca y explica, no bloquea: la respuesta ya se imprimió arriba y se
+        # imprime siempre. Esto solo le pone al lado qué se midió sobre ella.
+        print()
+        print(fanout_check(result.sql, conn))
 
     cost = result.cost_usd
     cost_str = f"${cost:.6f}" if cost is not None else "precio desconocido"
