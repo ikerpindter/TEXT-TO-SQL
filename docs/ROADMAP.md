@@ -2,6 +2,22 @@
 
 Lectura previa obligatoria antes de tocar nada del repo.
 
+## La regla del holdout
+
+**`evals/gold/worksheet_holdout.md` no se lee ni se abre hasta la etapa 4, y nada de
+lo que contiene entra a la construcción del detector. Si se abre antes, se dice en
+voz alta y el holdout queda quemado.**
+
+Va aquí, en un archivo trackeado, porque hasta hoy vivía solo en `CLAUDE.md`, que
+está en `.gitignore`: **el guardrail más importante del proyecto era el único que no
+sobrevivía a un clone limpio.** Sigue también en `CLAUDE.md`; esto no lo reemplaza,
+lo respalda.
+
+No hay nada que la haga cumplir. Es una promesa, igual que el ciego de las
+worksheets, y por eso la segunda mitad de la regla importa tanto como la primera: **un
+holdout abierto y reportado sigue siendo evidencia de algo; uno abierto en silencio
+no.**
+
 ## Orden de rebanadas
 
 Actualizado tras cerrar la rebanada 2.
