@@ -5,6 +5,32 @@
 Read-only sobre la base y los artefactos. Escribe las dos worksheets y el keymap,
 y se niega a sobrescribir cualquiera de los tres.
 
+LOS TRES GUARDS, Y POR QUE SON TRES Y NO UNO
+---------------------------------------------
+Se evaluan en este orden, y cada uno protege una cosa distinta:
+
+1. **Etiquetas escritas.** Protege una MEDICION. Una worksheet etiquetada no es una
+   plantilla: regenerarla destruye el diff contra el papel en blanco.
+2. **Sello en la cabecera.** Protege una PROMESA. Agregado el 30 de julio de 2026.
+3. **El archivo ya existe.** Es el guard generico y el mas debil.
+
+**El guard 2 existe porque el 1 no cubre el unico archivo que el sello protege.**
+`worksheet_holdout.md` tiene sus 24 lineas `LABEL:` vacias —nadie ha etiquetado el
+holdout, por definicion, hasta la etapa 4— asi que el guard de etiquetas lo deja
+pasar entero. Y el guard 3 no alcanza, por dos razones: se dispara solo si el
+archivo existe, y su mensaje **invita a borrarlo** ("borralos a mano si de verdad
+quieres rehacerlos"), que es exactamente la instruccion equivocada para un archivo
+sellado. Una regeneracion se llevaria el sello sin dejar rastro, que es justo el
+modo de falla que el sello existe para evitar.
+
+**El guard va sobre el SELLO, no sobre las etiquetas**, y por eso es independiente:
+un archivo puede estar sellado y vacio, que es precisamente el caso del holdout.
+
+Limite honesto, anotado y no cerrado: si alguien **borra** el archivo, no queda
+sello que detectar y el guard no puede hacer nada. Eso no se puede arreglar desde
+aqui; lo unico que se puede es que borrarlo sea un acto deliberado y visible en un
+diff, que es lo que el sello ya logra.
+
 POR QUE LA WORKSHEET NO LLEVA EL id DEL CORPUS
 ----------------------------------------------
 La especificacion pedia "id, SQL formateado, LABEL:, SHAPE:". **El id del corpus
@@ -133,6 +159,32 @@ def labeled_cases(path: Path) -> int:
     return len(LABELED_RE.findall(path.read_text("utf-8")))
 
 
+# El campo de sello. Va dentro de un comentario HTML por dos razones: no se ve en
+# el markdown renderizado, y no parece un campo de la plantilla. `validate_labels`
+# reporta cualquier linea con forma `PALABRA:` que no reconozca, asi que un sello
+# escrito como campo visible seria ruido en cada corrida del validador.
+SEAL_RE = re.compile(r"^<!--\s*SELLO\b", re.M)
+
+# Solo se mira la cabecera. Un sello vale por estar arriba, donde lo ve quien abre
+# el archivo; buscarlo en todo el cuerpo lo volveria falsificable desde cualquier
+# linea perdida a la mitad.
+SEAL_HEADER_LINES = 40
+
+
+def sealed(path: Path) -> bool:
+    """Si el archivo trae el campo de sello en su cabecera.
+
+    **Lee el archivo pero no lo vuelca**: devuelve un booleano y nada mas, y solo
+    mira las primeras lineas. Es la misma disciplina con la que se escribio el
+    sello del holdout, que se antepuso sin abrir el archivo.
+    """
+    if not path.exists():
+        return False
+    with path.open(encoding="utf-8") as handle:
+        head = "".join(next(handle, "") for _ in range(SEAL_HEADER_LINES))
+    return SEAL_RE.search(head) is not None
+
+
 def main() -> int:
     # GUARD DURO: una worksheet con etiquetas escritas es una MEDICION.
     # Regenerarla la destruye, y eso no puede depender de que alguien se acuerde.
@@ -151,6 +203,26 @@ def main() -> int:
         print("Si de verdad hay que rehacer las worksheets, primero se decide que")
         print("pasa con esas etiquetas y se deja escrito. No se resuelve aqui.")
         return 2
+
+    # GUARD DURO: un archivo sellado no se regenera, TENGA O NO ETIQUETAS.
+    # Va sobre el sello y no sobre las etiquetas a proposito: el holdout esta
+    # sellado y vacio, o sea que es justo el archivo que el guard de arriba no
+    # cubre, y el unico que el sello protege.
+    sealed_files = [p for p in OUT.values() if sealed(p)]
+    if sealed_files:
+        print("ME NIEGO A ESCRIBIR: hay archivos sellados.")
+        print()
+        for path in sealed_files:
+            print(f"  {path.name}: trae un campo de sello en la cabecera")
+        print()
+        print("Un sello es una promesa que viaja DENTRO del archivo, y regenerarlo")
+        print("lo borraria sin dejar rastro. Ese es exactamente el modo de falla")
+        print("que el sello existe para evitar.")
+        print()
+        print("NO borres el archivo para saltarte esto. Si de verdad hay que")
+        print("rehacerlo, primero se decide que pasa con el sello y se deja escrito,")
+        print("porque borrarlo tiene que ser un acto deliberado y visible en un diff.")
+        return 3
 
     existing = [p for p in [KEYMAP, *OUT.values()] if p.exists()]
     if existing:

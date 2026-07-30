@@ -77,12 +77,51 @@ aparte y se verificó solo con conteos —`grep -c`, `diff --stat`— así que n
 ni ninguna etiqueta pasaron por pantalla. El ciego sigue intacto y esa afirmación es
 auditable en el commit.
 
-**Hueco conocido, anotado y no cerrado:** `make_worksheets_20260729.py` **no emite el
-sello**, así que una regeneración lo borraría. Hoy no puede pasar sin darse cuenta
-—el script se niega a sobrescribir una worksheet con etiquetas escritas— pero sobre
-una worksheet vacía sí. Cerrarlo es una línea en el generador y le toca a quien lo
-toque después; no se hizo hoy porque este cierre era de documentación y no de
-comportamiento.
+#### El generador se niega sobre un archivo sellado
+
+**Cerrado el 30 de julio de 2026**, el mismo día que se abrió el hueco.
+
+`make_worksheets_20260729.py` tenía un guard de etiquetas, y **ese guard no cubría
+el único archivo que el sello protege.** El holdout tiene sus 24 líneas `LABEL:`
+vacías —nadie ha etiquetado el holdout, por definición, hasta la etapa 4— así que
+el guard lo dejaba pasar entero. El guard genérico de "el archivo ya existe"
+tampoco alcanzaba, y por una razón que vale escribir: **su mensaje invitaba a
+borrarlo** —"bórralos a mano si de verdad quieres rehacerlos"— que es exactamente
+la instrucción equivocada para un archivo sellado.
+
+Ahora son tres guards, en orden, y cada uno protege una cosa distinta:
+
+| # | Guard | Protege | Salida |
+|---|---|---|---|
+| 1 | Etiquetas escritas | una **medición** | 2 |
+| 2 | **Sello en la cabecera** | una **promesa** | **3** |
+| 3 | El archivo ya existe | nada en particular | 1 |
+
+**El guard 2 va sobre el sello y no sobre las etiquetas**, y por eso es
+independiente del 1: un archivo puede estar sellado y vacío, que es precisamente el
+caso del holdout. El guard 1 se quedó exactamente como estaba.
+
+El campo de sello vive dentro de un comentario HTML (`<!-- SELLO ... -->`) por dos
+razones: no se ve en el markdown renderizado, y no parece un campo de la plantilla
+—`validate_labels.py` reporta cualquier línea `PALABRA:` que no reconozca, así que
+un sello escrito como campo visible sería ruido en cada corrida. Solo se busca en
+las primeras 40 líneas: un sello vale por estar arriba, y buscarlo en todo el cuerpo
+lo volvería falsificable desde cualquier línea perdida a la mitad.
+
+Verificado en las dos direcciones con archivos de prueba, sin tocar el holdout real:
+sobre un archivo sellado sale 3 y **no escribe nada, ni siquiera el keymap**; sobre
+uno sin sello escribe las dos worksheets y el keymap normal; y con etiquetas sigue
+saliendo 2. La detección se hace sin volcar el archivo: devuelve un booleano.
+
+**Dos límites que se quedan abiertos, y son honestos:**
+
+- **Si alguien borra el archivo, no hay sello que detectar.** Ningún guard puede
+  arreglar eso. Lo único alcanzable es que borrarlo sea deliberado y visible en un
+  diff, que es lo que el sello ya logra.
+- **El generador sigue sin EMITIR el sello.** Una worksheet creada desde cero nace
+  sin cabecera, así que el sello hay que ponerlo a mano. Se anota en lugar de
+  cerrarse: hoy no hay ninguna worksheet por crear, y escribir un emisor para un
+  caso que no existe es la clase de crecimiento por inercia que el alcance prohíbe.
 
 ## Orden de rebanadas
 
