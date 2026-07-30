@@ -67,6 +67,7 @@ guion bajo, así que `select.args.get("from")` devuelve `None` **en silencio**.
 
 from __future__ import annotations
 
+import sqlite3
 from collections import deque
 from dataclasses import dataclass, field
 
@@ -665,3 +666,384 @@ def static_scan(sql: str, cat: catalog_mod.Catalog) -> StaticScan:
                 )
 
     return scan
+
+
+# --------------------------------------------------------------------------
+# La sonda dinámica
+# --------------------------------------------------------------------------
+# Todo lo que no forma parte de la fuente de filas. El multiplicador se mide
+# sobre FROM, JOINs y WHERE: ni ORDER BY ni LIMIT cambian cuántas veces aparece
+# una fila de T, y GROUP BY colapsa justo lo que queremos contar.
+_STRIP_KEYS = (
+    "group",
+    "having",
+    "order",
+    "limit",
+    "offset",
+    "distinct",
+    "qualify",
+    "sort",
+    "cluster",
+    "distribute",
+    "windows",
+)
+
+
+def _row_source(select: exp.Select, root: exp.Expression | None) -> exp.Select:
+    """La fuente de filas de un scope, lista para colgarle otra lista de SELECT.
+
+    Si el scope vive dentro de un CTE, copiarlo lo desprende del `WITH` que define
+    sus fuentes, así que el `WITH` de la raíz se vuelve a colgar. Un CTE de más en
+    la cláusula no cuesta nada: SQLite ignora los que no se usan.
+    """
+    probe = select.copy()
+    for key in _STRIP_KEYS:
+        if probe.args.get(key) is not None:
+            probe.set(key, None)
+    if probe.args.get("with") is None and isinstance(root, exp.Select):
+        with_clause = root.args.get("with")
+        if with_clause is not None:
+            probe.set("with", with_clause.copy())
+    return probe
+
+
+def _quoted(alias: str) -> str:
+    return alias.replace('"', '""')
+
+
+def _probe_counts(
+    conn: sqlite3.Connection,
+    select: exp.Select,
+    root: exp.Expression | None,
+    alias: str,
+) -> tuple[int, int, int]:
+    """`COUNT(*)` de la fuente, `COUNT(T.rowid)` y `COUNT(DISTINCT T.rowid)`.
+
+    El numerador es `COUNT(T.rowid)` y **no** `COUNT(*)`. Con `LEFT JOIN`, las
+    filas sin match traen el rowid en NULL: `COUNT(*)` las cuenta y el DISTINCT
+    no, así que el multiplicador saldría inflado sin que exista inflación. Un
+    falso `inflated` es justo el error que este guardrail no se puede permitir,
+    porque enseña a desconfiar de las advertencias. Forzando el hueco, además, la
+    fórmula original divide entre cero.
+
+    El `COUNT(*)` va aparte porque es lo único que separa los dos subcasos de
+    `no_contributing_rows`: fuente vacía contra `T` que no aporta.
+    """
+    probe = _row_source(select, root)
+    alias_sql = _quoted(alias)
+    probe.set(
+        "expressions",
+        sqlglot.parse_one(
+            f'SELECT COUNT(*), COUNT("{alias_sql}"."rowid"),'
+            f' COUNT(DISTINCT "{alias_sql}"."rowid")',
+            dialect=DIALECT,
+        ).expressions,
+    )
+    row = conn.execute(probe.sql(dialect=DIALECT)).fetchone()
+    return int(row[0]), int(row[1]), int(row[2])
+
+
+def _reported_value(
+    conn: sqlite3.Connection,
+    select: exp.Select,
+    root: exp.Expression | None,
+    node: exp.Expression,
+):
+    """El valor del agregado tal como salió: sobre la fuente con duplicación."""
+    probe = _row_source(select, root)
+    probe.set("expressions", [node.copy()])
+    return conn.execute(probe.sql(dialect=DIALECT)).fetchone()[0]
+
+
+def _deduplicated_value(
+    conn: sqlite3.Connection,
+    select: exp.Select,
+    root: exp.Expression | None,
+    alias: str,
+    argument: exp.Expression,
+    function: str,
+):
+    """El mismo agregado contando cada fila de `T` una sola vez.
+
+    **No se aproxima dividiendo por el multiplicador**, y hay número detrás de la
+    prohibición: sobre Q4 esa división da 359,701,250 contra 348,500,000 reales,
+    3.21% de error presentado como cifra exacta. Se recalcula contra la base.
+
+    `DISTINCT rowid, valor` deja exactamente una fila por fila de `T`, porque el
+    rowid ya es único. Las filas sin match de un `LEFT JOIN` colapsan en una sola
+    con NULL, y `SUM` y `COUNT` la ignoran igual que ignoran cualquier NULL.
+    """
+    inner = _row_source(select, root)
+    with_clause = inner.args.get("with")
+    if with_clause is not None:
+        inner.set("with", None)
+
+    alias_sql = _quoted(alias)
+    rowid_column = sqlglot.parse_one(
+        f'SELECT "{alias_sql}"."rowid" AS "__rid"', dialect=DIALECT
+    ).expressions[0]
+    value_column = exp.alias_(argument.copy(), "__value", quoted=True)
+    inner.set("expressions", [rowid_column, value_column])
+    inner.set("distinct", exp.Distinct())
+
+    prefix = f"{with_clause.sql(dialect=DIALECT)} " if with_clause is not None else ""
+    sql = f'{prefix}SELECT {function}("__value") FROM ({inner.sql(dialect=DIALECT)})'
+    return conn.execute(sql).fetchone()[0]
+
+
+# --------------------------------------------------------------------------
+# El resultado
+# --------------------------------------------------------------------------
+@dataclass
+class Finding:
+    """Un hallazgo ya medido.
+
+    `row_multiplier` y `value_inflation` **nunca se colapsan**. El primero es
+    duplicación de FILAS y es estructural; el segundo dice cuánto se infló ESTA
+    cifra y solo existe cuando se pudo recalcular el valor deduplicado.
+
+    Y el multiplicador de filas **no acota** al de valor en ninguna dirección: en
+    Q4 queda por debajo (40.0 contra 41.285653) y en A6 por encima (39.7 contra
+    39.6336). Por eso el render tiene prohibido cualquier "al menos Nx" o "a lo
+    mucho Nx".
+    """
+
+    shape: str
+    aggregate: str
+    aggregate_function: str
+    table: str
+    one_side: str | None
+    many_side: str | None
+    join_path: tuple[str, ...]
+    row_multiplier: float | None
+    multiplier_scope: str
+    grouped: bool
+    source_rows: int
+    contributing_rows: int
+    distinct_rows: int
+    subcase: str | None = None
+    reported_value: float | None = None
+    deduplicated_value: float | None = None
+    value_inflation: float | None = None
+
+    def to_dict(self) -> dict:
+        return {
+            "shape": self.shape,
+            "aggregate": self.aggregate,
+            "aggregate_function": self.aggregate_function,
+            "table": self.table,
+            "one_side": self.one_side,
+            "many_side": self.many_side,
+            "join_path": list(self.join_path),
+            "row_multiplier": self.row_multiplier,
+            "multiplier_scope": self.multiplier_scope,
+            "grouped": self.grouped,
+            "source_rows": self.source_rows,
+            "contributing_rows": self.contributing_rows,
+            "distinct_rows": self.distinct_rows,
+            "subcase": self.subcase,
+            "reported_value": self.reported_value,
+            "deduplicated_value": self.deduplicated_value,
+            "value_inflation": self.value_inflation,
+        }
+
+
+@dataclass
+class FanoutResult:
+    verdict: str
+    reason: str | None = None
+    reason_detail: str | None = None
+    subcase: str | None = None
+    findings: list[Finding] = field(default_factory=list)
+    unattributed_aggregates: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return {
+            "verdict": self.verdict,
+            "reason": self.reason,
+            "reason_detail": self.reason_detail,
+            "subcase": self.subcase,
+            "findings": [finding.to_dict() for finding in self.findings],
+            "unattributed_aggregates": list(self.unattributed_aggregates),
+        }
+
+
+def _round(value: float | None) -> float | None:
+    """Recorta el ruido de punto flotante sin mover el valor medido."""
+    return None if value is None else round(value, 6)
+
+
+def analyze(
+    sql: str,
+    conn: sqlite3.Connection,
+    cat: catalog_mod.Catalog | None = None,
+) -> FanoutResult:
+    """El detector completo: estática para la forma, dinámica para el multiplicador.
+
+    Dos consultas de SQLite por hallazgo sobre la conexión read-only que ya
+    existe, más dos opcionales en el caso angosto. Cero llamadas a API.
+    """
+    cat = cat if cat is not None else catalog_mod.load(conn)
+
+    try:
+        scan = static_scan(sql, cat)
+    except OutOfScope as exc:
+        # `not_analyzed` va primero a propósito: si no podemos analizar, lo decimos
+        # y paramos. No se degrada a `clean`, que afirmaría algo sin verificarlo.
+        return FanoutResult(
+            verdict=NOT_ANALYZED, reason=exc.reason, reason_detail=exc.detail
+        )
+
+    findings: list[Finding] = []
+    for candidate in scan.candidates:
+        try:
+            source_rows, contributing, distinct = _probe_counts(
+                conn, candidate.select, scan.root, candidate.alias
+            )
+        except sqlite3.Error as exc:
+            return FanoutResult(
+                verdict=NOT_ANALYZED,
+                reason=REASON_PROBE_FAILED,
+                reason_detail=f"{type(exc).__name__}: {exc}",
+            )
+
+        if contributing == 0:
+            # Sin filas que aporten, el multiplicador es indefinido. Para
+            # `unexplained` eso significa que no hay nada que reportar: esa forma
+            # SOLO existe cuando la medición encontró duplicación.
+            if candidate.shape == UNEXPLAINED:
+                continue
+            findings.append(
+                _make_finding(
+                    candidate,
+                    row_multiplier=None,
+                    subcase=EMPTY_SOURCE if source_rows == 0 else T_ABSENT,
+                    source_rows=source_rows,
+                    contributing=contributing,
+                    distinct=distinct,
+                )
+            )
+            continue
+
+        multiplier = contributing / distinct
+        if candidate.shape == UNEXPLAINED and multiplier <= 1.0:
+            continue
+
+        findings.append(
+            _make_finding(
+                candidate,
+                row_multiplier=multiplier,
+                subcase=None,
+                source_rows=source_rows,
+                contributing=contributing,
+                distinct=distinct,
+            )
+        )
+
+    _fill_values(conn, scan, findings)
+
+    if not findings:
+        verdict = CLEAN
+    elif any(f.row_multiplier is not None and f.row_multiplier > 1.0 for f in findings):
+        # Si hay varios hallazgos, el veredicto es el peor caso.
+        verdict = INFLATED
+    elif any(f.row_multiplier is not None for f in findings):
+        verdict = SHAPE_NO_INFLATION
+    else:
+        # La precedencia es POR HALLAZGO: `no_contributing_rows` solo gana cuando
+        # NINGUNO se pudo medir. Con uno medible y otro no, gana el medible.
+        verdict = NO_CONTRIBUTING_ROWS
+
+    return FanoutResult(
+        verdict=verdict,
+        subcase=findings[0].subcase if verdict == NO_CONTRIBUTING_ROWS else None,
+        # `findings` va POBLADO en `no_contributing_rows`, con el multiplicador en
+        # null. Sin eso el guardrail se quedaría callado en el 44% del corpus,
+        # incluidas las entradas de Q4 con el fan-out de `budget_usd`.
+        findings=findings,
+        unattributed_aggregates=scan.unattributed_aggregates,
+    )
+
+
+def _make_finding(
+    candidate: Candidate,
+    row_multiplier: float | None,
+    subcase: str | None,
+    source_rows: int,
+    contributing: int,
+    distinct: int,
+) -> Finding:
+    return Finding(
+        shape=candidate.shape,
+        aggregate=candidate.aggregate,
+        aggregate_function=candidate.function,
+        table=candidate.table,
+        one_side=candidate.one_side,
+        many_side=candidate.many_side,
+        join_path=candidate.join_path,
+        row_multiplier=_round(row_multiplier),
+        # El multiplicador se calcula global sobre la fuente de filas, nunca por
+        # grupo. Con GROUP BY eso prueba que EXISTE duplicación en algún lugar del
+        # resultado, no que cada grupo esté afectado.
+        multiplier_scope="global",
+        grouped=candidate.has_group_by,
+        source_rows=source_rows,
+        contributing_rows=contributing,
+        distinct_rows=distinct,
+        subcase=subcase,
+    )
+
+
+# El caso angosto donde `deduplicated_value` existe. Fuera de aquí va `null` y no
+# se aproxima. `TOTAL` entra porque es `SUM` con otro nombre en SQLite.
+_NARROW_FUNCTIONS = frozenset({"SUM", "COUNT", "TOTAL"})
+
+
+def _fill_values(
+    conn: sqlite3.Connection, scan: StaticScan, findings: list[Finding]
+) -> None:
+    """Valor reportado y valor deduplicado, solo donde se pueden medir de verdad.
+
+    Exige exactamente un hallazgo, que viva en el scope de más afuera y que no
+    haya `GROUP BY`: con varios agregados o varios grupos, "el valor reportado" no
+    es un número, es una tabla.
+    """
+    if len(findings) != 1 or len(scan.candidates) != 1:
+        return
+    finding, candidate = findings[0], scan.candidates[0]
+    if finding.row_multiplier is None or candidate.has_group_by:
+        return
+    if candidate.select is not scan.root or candidate.node is None:
+        return
+
+    try:
+        finding.reported_value = _reported_value(
+            conn, candidate.select, scan.root, candidate.node
+        )
+    except sqlite3.Error:
+        return
+
+    if candidate.shape != FAN_TRAP or candidate.function not in _NARROW_FUNCTIONS:
+        return
+    if candidate.argument is None:
+        return
+
+    try:
+        finding.deduplicated_value = _deduplicated_value(
+            conn,
+            candidate.select,
+            scan.root,
+            candidate.alias,
+            candidate.argument,
+            "SUM" if candidate.function == "TOTAL" else candidate.function,
+        )
+    except sqlite3.Error:
+        return
+
+    reported, deduplicated = finding.reported_value, finding.deduplicated_value
+    if (
+        isinstance(reported, (int, float))
+        and isinstance(deduplicated, (int, float))
+        and deduplicated
+    ):
+        finding.value_inflation = _round(reported / deduplicated)
