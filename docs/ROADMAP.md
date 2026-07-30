@@ -195,8 +195,7 @@ y el primero que aplica gana.
 >    detectada estáticamente con `row_multiplier: null`. Sin esto el guardrail se
 >    quedaría callado en el 44% del corpus, incluidas las entradas de Q4 con el
 >    fan-out de `budget_usd`.
-> 2. **Campo `subcase`** que separa los dos: `query_sin_filas` contra
->    `query_con_filas` con `T` vacía.
+> 2. **Campo `subcase`** que separa los dos. Ver la corrección de nombres abajo.
 > 3. **La precedencia pasa a ser POR HALLAZGO, no por query.** Si un hallazgo es
 >    medible y otro no, el veredicto sale del medible. `no_contributing_rows` solo
 >    gana cuando **ninguno** lo es.
@@ -209,6 +208,28 @@ y el primero que aplica gana.
   query cuya `T` no aporta filas.
 - Si hay varios hallazgos en la misma query, **el veredicto es el peor caso.** Un
   solo hallazgo `inflated` hace que la query sea `inflated`.
+
+> **Corrección 2026-07-29: los subcasos de `no_contributing_rows` se nombran por la
+> FUENTE, no por la salida.**
+>
+> | Subcase | Definición |
+> |---|---|
+> | `empty_source` | `COUNT(*)` de la fuente de filas es 0 |
+> | `t_absent` | `COUNT(*)` de la fuente es mayor a 0 **y** `COUNT(T.rowid)` es 0 |
+>
+> Los nombres viejos —`query_sin_filas` y `query_con_filas`— estaban tomados de las
+> filas de la **salida**, y ahí estaba el error: un agregado desnudo sobre cero filas
+> emite exactamente una fila, así que "query con filas" describía a los dos casos y
+> los colapsaba. Por la fuente son distintos.
+>
+> **No hizo falta agregar ningún caso.** D1 es `empty_source` (fuente 0 filas) y D2
+> es `t_absent` (fuente 794, `T` aporta 0). El hueco de cobertura que se creía tener
+> **no existía**: era un error de nomenclatura disfrazado de hueco.
+>
+> **Dato de producto, y pide render distinto:** D1 le muestra al usuario un `NULL` y
+> D2 le muestra un **`0`**. El `0` es el peligroso, porque **parece una respuesta**:
+> "cero casas en backlog" se lee como un hecho verificado. Un `NULL` al menos se ve
+> raro y hace que alguien pregunte.
 
 > **`clean` significa "sin duplicación medida", NO "la query es correcta".**
 >
@@ -383,6 +404,22 @@ para abajo.
    devuelven NULL sin error.**
 
    **El guard, confirmado por medición:** `isinstance(scope.sources[nombre], exp.Table)`.
+
+   **Cuántas veces pega hoy: cero.** Medido el 2026-07-29 sobre las 49:
+
+   | | total | en dev |
+   |---|---|---|
+   | Con alguna fuente que no es tabla base (CTE o derivada) | 7 | 3 |
+   | De esas, con fuente **derivada**, no CTE declarado | 5 | 2 |
+   | **Con un agregado sobre columna de fuente no-base** ← el trap | **0** | 0 |
+
+   O sea: el guard es **necesario pero latente**. Ninguna entrada del corpus real
+   agrega sobre una columna que venga de un CTE o de una derivada; las 7 con fuentes
+   no-base agregan siempre sobre columnas de tablas base. La id 17, que se citó antes
+   como instancia viva del trap, **no lo es**: su `SUM` vive dentro de la subconsulta,
+   donde la tabla sí es base, y afuera solo se selecciona la columna sin agregarla.
+   El guard se implementa igual, porque el set adversario y la rebanada 4 sí pueden
+   producirlo, pero no hay que esperar que dispare sobre este corpus.
 2. **`WITHOUT ROWID` va a `not_analyzed`, ruidoso.** Medido: cero tablas
    `WITHOUT ROWID` en esta base, así que este guard **no tiene blanco hoy**.
 3. **Ninguna columna puede llamarse `rowid`, `oid` ni `_rowid_`**, o lo sombrea.
@@ -743,6 +780,31 @@ porcentajes**, hasta que exista el gold set grande de la rebanada 4.
 Y hay una segunda razón para no publicar porcentajes que es independiente del N: la
 **duplicación semántica del corpus sigue sin medir**, así que las 49 entradas no son
 49 observaciones independientes.
+
+### El ciego y el holdout dependen de disciplina, no de mecanismo
+
+Hay que decirlo en voz alta porque es fácil confundir "está protegido" con "está
+anotado".
+
+**El keymap deshace el ciego con un `cat`.** `worksheet_keymap.json` está commiteado
+y mapea cada clave opaca a su id del corpus, y de ahí la config sale con una resta:
+ids 1–25 son `ddl_only`, 26–49 son `values_text_maxcard20`. Nada impide abrirlo
+mientras se etiqueta.
+
+**Es exactamente la misma situación que el holdout.** `fanout_labels_holdout.md` es
+intocable hasta la etapa 4 por una promesa, no por un permiso de archivo.
+
+**Se anota y no se construye nada para eso.** Cifrar el keymap, sacarlo del repo o
+meterle un hook sería infraestructura para un problema que en este proyecto tiene un
+solo participante, y el alcance dice no agregar lo que la rebanada no pide. Lo que sí
+tiene que quedar escrito es que **si alguna vez se abre, se dice en voz alta y se
+marca el ciego como quemado**, igual que con el holdout. Un ciego roto y reportado
+sigue siendo evidencia de algo; uno roto en silencio no.
+
+Además, el ciego ya era **parcial por construcción**: los literales del SQL delatan
+la config a quien conozca el proyecto —`'Lennar'` solo aparece en la config A y
+`'Lennar Corporation'` solo en la B— y el SQL no se puede redactar sin destruir la
+tarea de etiquetado.
 
 ### Regla: todo conteo lleva su denominador
 

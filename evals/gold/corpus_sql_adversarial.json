@@ -7,6 +7,17 @@
   "never_in_worksheets": "Estos casos NO se etiquetan a ciegas. Traen su respuesta declarada por diseno y viven en su propio archivo.",
   "limitacion": "Las respuestas esperadas se escribieron razonando sobre la especificacion. Si el razonamiento esta mal, el test codifica el error. Por eso cada caso lleva su rationale, y los que dependen de los datos llevan precondition medida.",
   "precondition_contract": "El runner evalua la precondicion ANTES del veredicto y truena ruidoso si no se cumple. Un caso que no puede discriminar tiene que FALLAR, no pasar. Esta regla existe porque el C1 original pasaba verde midiendo nada.",
+  "correccion_20260729_subcases": {
+    "que_cambio": "Los subcasos de no_contributing_rows se renombraron. Antes eran 'query_sin_filas' y 'query_con_filas', nombrados por las filas de la SALIDA. Ahora son 'empty_source' y 't_absent', definidos por las filas de la FUENTE.",
+    "definiciones": {
+      "empty_source": "COUNT(*) de la fuente de filas es 0.",
+      "t_absent": "COUNT(*) de la fuente es mayor a 0 y COUNT(T.rowid) es 0."
+    },
+    "por_que": "Nombrarlos por la salida era el error. Un agregado desnudo sobre cero filas emite exactamente una fila, asi que 'query con filas' describia tanto a D1 como a D2 y los colapsaba. Por la fuente son distintos y los dos ya estaban cubiertos: D1 es empty_source y D2 es t_absent.",
+    "cobertura": "Con los nombres corregidos, los dos subcasos tienen cobertura. NO se agrego ningun caso: el hueco que se creia tener no existia, era un error de nomenclatura.",
+    "dato_de_producto": "D1 le muestra al usuario un NULL y D2 le muestra un 0. El 0 es mas peligroso, porque parece una respuesta: 'cero casas en backlog' se lee como un hecho, y un NULL al menos se ve raro. Los dos subcasos merecen render distinto.",
+    "nota_de_protocolo": "Los valores medidos de cada caso no se tocaron. Esto es una correccion de metadatos, y las frases de los rationale que quedaron obsoletas se conservan tal cual: las supersede esta nota, no se reescriben."
+  },
   "verdicts": [
     "not_analyzed",
     "no_contributing_rows",
@@ -191,7 +202,8 @@
       "expected_verdict": "no_contributing_rows",
       "expected_shape": "fan_trap",
       "reason_tag": null,
-      "subcase": "query_con_filas",
+      "subcase": "empty_source",
+      "subcase_correccion_20260729": "Antes decia 'query_con_filas'. Renombrado: el subcaso se define por las filas de la FUENTE, y la fuente de D1 tiene 0 filas. La frase del rationale que dice 'Es el mismo subcaso que D2' queda SUPERSEDIDA: son distintos. D1 es empty_source, D2 es t_absent, y la afirmacion de que query_sin_filas no tiene cobertura era falsa, producto del mismo error de nomenclatura. Medido: fuente 0 filas, salida 1 fila con NULL.",
       "precondition": {
         "description": "COUNT(T.rowid) igual a 0, multiplicador indefinido",
         "metric": "count_t_rowid",
@@ -208,7 +220,8 @@
       "expected_verdict": "no_contributing_rows",
       "expected_shape": "fan_trap",
       "reason_tag": null,
-      "subcase": "query_con_filas",
+      "subcase": "t_absent",
+      "subcase_correccion_20260729": "Antes decia 'query_con_filas'. Renombrado: el subcaso se define por las filas de la FUENTE. La de D2 tiene 794 filas y T no aporta ninguna, que es exactamente t_absent. Es un subcaso DISTINTO al de D1. Medido: fuente 794 filas, salida 1 fila con un 0.",
       "precondition": {
         "description": "la query devuelve mas de 0 filas Y COUNT(T.rowid) es 0",
         "metric": "rows_returned_gt0_and_count_t_rowid_eq0",
