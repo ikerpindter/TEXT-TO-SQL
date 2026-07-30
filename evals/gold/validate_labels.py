@@ -69,22 +69,43 @@ KNOWN_FIELDS = {"LABEL", "SHAPE", "RECONOCIDA", "NOTA"}
 
 CASE_RE = re.compile(r"^### ((?:DEV|HOLD)-\d{2})\s*$", re.M)
 FIELD_RE = re.compile(r"^(LABEL|SHAPE|RECONOCIDA|NOTA):[ \t]*(.*)$", re.M)
+NOTA_RE = re.compile(r"^NOTA:", re.M)
 # Cualquier linea que ARRANQUE con una palabra en mayusculas y dos puntos.
 # Deliberadamente laxa: preferimos un falso positivo reportado a un campo perdido.
 ANYFIELD_RE = re.compile(r"^([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ_]{1,30}):", re.M)
 
 
 def parse(text: str) -> dict[str, dict]:
-    """Extrae {clave: {campos, desconocidos}} en orden de aparicion."""
+    """Extrae {clave: {campos, desconocidos, tras_nota}} en orden de aparicion.
+
+    LA NOTA PUEDE SER MULTILINEA
+    ----------------------------
+    `NOTA:` es el ultimo campo de la plantilla y todo lo que va despues es texto
+    libre. El barrido de campos desconocidos **se corta ahi**, porque si no, una
+    nota de dos lineas cuya segunda arranque con algo tipo `OJO:` se reportaria
+    como campo mal escrito. Se probo: pasaba exactamente eso.
+
+    A cambio, un campo conocido que aparezca DESPUES de la NOTA se reporta: su
+    valor queda ambiguo con el texto libre, y la plantilla pone NOTA al final.
+    """
     marks = [(m.group(1), m.start()) for m in CASE_RE.finditer(text)]
     out: dict[str, dict] = {}
     for i, (key, start) in enumerate(marks):
         end = marks[i + 1][1] if i + 1 < len(marks) else len(text)
         block = text[start:end]
+
         fields = {name: value.strip() for name, value in FIELD_RE.findall(block)}
-        unknown = sorted({m for m in ANYFIELD_RE.findall(block)
+
+        nota = NOTA_RE.search(block)
+        head = block[:nota.start()] if nota else block
+        tail = block[nota.end():] if nota else ""
+
+        unknown = sorted({m for m in ANYFIELD_RE.findall(head)
                           if m not in KNOWN_FIELDS})
-        out[key] = {"fields": fields, "unknown": unknown}
+        after_nota = sorted({m for m in ANYFIELD_RE.findall(tail)
+                             if m in KNOWN_FIELDS})
+
+        out[key] = {"fields": fields, "unknown": unknown, "after_nota": after_nota}
     return out
 
 
@@ -127,6 +148,12 @@ def main(argv: list[str]) -> int:
             problems.append(
                 f"{key}: linea {name}: no reconocida. Campos validos: "
                 f"{', '.join(sorted(KNOWN_FIELDS))}")
+
+        for name in cases[key]["after_nota"]:
+            problems.append(
+                f"{key}: el campo {name}: aparece DESPUES de NOTA:. Todo lo que "
+                f"sigue a NOTA: es texto libre, asi que ese valor queda ambiguo. "
+                f"Mueve {name}: arriba de NOTA:")
 
         if "LABEL" not in fields:
             problems.append(f"{key}: falta la linea LABEL:")

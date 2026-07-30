@@ -832,10 +832,59 @@ duplicación real donde el humano no vio la estructura, el humano se equivocó. 
 sexta línea es la contraparte que impide que esa clemencia se vuelva un comodín: sin
 duplicación medida, `unexplained` no compra nada.
 
-Combinaciones que **esta tabla no cubre** y que habrá que resolver cuando aparezcan:
-`shape_present` con `not_analyzed`, `shape_absent` con `shape_no_inflation` o con
-`no_contributing_rows`, y `out_of_scope` contra cualquier veredicto que no sea
-`not_analyzed`. Quedan anotadas como huecos en lugar de improvisarse al momento.
+#### Las combinaciones restantes
+
+Completadas el 29 de julio de 2026, **también antes de que exista una etiqueta.**
+
+| Etiqueta humana | Veredicto del detector | Resultado |
+|---|---|---|
+| `shape_present` | `not_analyzed` | **hueco de cobertura CON riesgo.** Se vio estructura peligrosa y v1 no la alcanza. Se enruta por `reason` |
+| `shape_absent` | `not_analyzed` | **hueco de cobertura SIN riesgo.** Se enruta por `reason` igual |
+| `shape_absent` | `shape_no_inflation` | **falso positivo LATENTE**, pendiente de revisión manual. **No es acuerdo** |
+| `shape_absent` | `no_contributing_rows` | **acuerdo sobre fan-out.** El `no_contributing_rows` se reporta en su propia población, no en este conteo |
+| `out_of_scope` | cualquiera que no sea `not_analyzed` | **FUGA DEL GUARD DE ALCANCE.** Defecto hasta que se demuestre lo contrario, **nunca acuerdo** |
+
+Con estas cinco, **la matriz queda completa: las 4 etiquetas × 5 veredictos, 20 de 20
+combinaciones tienen regla escrita antes de la primera etiqueta.**
+
+Tres que merecen su razón explícita:
+
+- **`shape_absent` + `shape_no_inflation` no es acuerdo**, aunque los dos digan "no
+  infla". La estática marcó una forma que el humano no ve, y **solo la medición la
+  salvó de ser falso positivo**. Contarla como acuerdo escondería un detector que
+  sobre-detecta estructura y se salva por suerte de los datos. Va a revisión manual.
+- **`out_of_scope` contra cualquier otro veredicto es defecto por defecto.** El
+  detector emitió un veredicto sobre algo que no debía tocar. Un guard de alcance que
+  se filtra no es un acierto aunque el veredicto resulte correcto: significa que el
+  guard no está haciendo su trabajo, y el acierto fue accidental.
+- **`shape_absent` + `no_contributing_rows` es acuerdo sobre fan-out**, y el
+  `no_contributing_rows` se cuenta aparte. Son dos poblaciones distintas y mezclarlas
+  contaminaría las dos.
+
+#### Enrutado por `reason`, para las dos filas de `not_analyzed`
+
+| `reason` | Lectura |
+|---|---|
+| En `{self_join, window_function, set_operation, non_fk_join, ambiguous_column}` | Los criterios listan esa razón, así que la etiqueta debió ser `out_of_scope`. **Error de etiquetado del humano.** Se cuenta y se reporta como tal |
+| Fuera de esa lista, por ejemplo `non_base_table` | Los criterios nunca dijeron que buscara eso. **Hueco del documento de criterios, no error del humano.** Se reporta como hueco de criterios |
+
+La distinción importa porque las dos se ven igual en los datos —etiqueta que no
+coincide con veredicto— y tienen causas opuestas. Una se arregla etiquetando mejor;
+la otra se arregla escribiendo mejor los criterios. Confundirlas haría que un
+documento incompleto se lea como un etiquetador descuidado.
+
+#### `RECONOCIDA` no excluye, duplica el reporte
+
+Las entradas marcadas `RECONOCIDA: si` **no se sacan del conteo.** Los conteos
+primarios se reportan **dos veces**: con todas las entradas, y excluyendo las
+reconocidas.
+
+- Si los dos números **difieren fuerte**, el ciego estaba haciendo trabajo.
+- Si **no difieren**, el reconocimiento no sesgó mucho.
+
+**Es una medición del efecto del ciego, no un supuesto sobre él.** Descartar las
+reconocidas de entrada tiraría justo el dato que permite saber cuánto valía el ciego,
+y además reduciría la N sin evidencia de que hiciera falta.
 
 ### El ciego y el holdout dependen de disciplina, no de mecanismo
 
