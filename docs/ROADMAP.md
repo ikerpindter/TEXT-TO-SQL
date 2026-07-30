@@ -401,6 +401,62 @@ Resolución de la corrección de arriba. Definido el 29 de julio de 2026 en
 | `row_multiplier` | `COUNT(T.rowid) / COUNT(DISTINCT T.rowid)` | Es el factor de duplicación de **filas**. Calculable solo si `T` es tabla base |
 | `value_inflation` | `reported_value / deduplicated_value` | **Solo** en el caso angosto donde `deduplicated_value` existe. `null` en cualquier otro caso |
 
+> **Corrección 2026-07-30: `value_inflation` es EXACTAMENTE `row_multiplier` cuando
+> el agregado es `COUNT` de la PK o del `rowid` de la tabla afectada.**
+>
+> Esta tabla decía que `value_inflation` existe **solo** donde exista
+> `deduplicated_value`, y dos párrafos más abajo el propio documento ya decía que
+> para `COUNT` de la PK de la tabla afectada el multiplicador **sí** es el factor de
+> inflación, "exacto por definición". Las dos frases no podían ser ciertas a la vez
+> y la etapa 3 se construyó siguiendo la primera, así que A2 salía con
+> `value_inflation: null` teniendo un factor exacto disponible.
+>
+> **Gana la aritmética, porque no depende de la forma ni de los datos:** sobre la
+> fuente duplicada `COUNT(T.pk)` cuenta las filas que aportan, deduplicado cuenta
+> las filas distintas, y el cociente **es** el multiplicador. Aplica igual a
+> `fan_trap`, a `chasm_trap` y a `unexplained`.
+>
+> Exige que el agregado toque **una sola columna de una sola tabla**, y que esa
+> columna sea el `rowid` o una PK de una sola columna. `COUNT(T.x)` de una columna
+> cualquiera **no** califica aunque hoy diera el mismo número: si `x` admite nulos,
+> numerador y denominador dejan de encogerse a la par.
+>
+> **Verificado el 2026-07-30 y sin desacuerdos:** en todos los hallazgos donde el
+> atajo aritmético y la sonda medida existían a la vez, dieron el mismo número.
+> A2 pasa de `null` a **2.0**.
+
+> **Corrección 2026-07-30: el caso angosto de `deduplicated_value` estaba
+> demasiado angosto. Disparó 0 de 25 veces.**
+>
+> Las condiciones eran cuatro: exactamente un agregado marcado, forma `fan_trap`,
+> `SUM` o `COUNT` sobre una columna del lado "uno", y sin `GROUP BY`. Corrido sobre
+> las 49 entradas del corpus, **el campo salió `null` en los 25 hallazgos**. Una
+> regla que nunca aplica no protege de nada: solo hace que el guardrail se calle
+> justo donde tenía el dato más útil.
+>
+> **Se quitan dos condiciones.** Quedan **sin `GROUP BY`** y **`T` es tabla base**.
+> Se van "forma `fan_trap`" —la aritmética del deduplicado no depende de qué forma
+> explique la duplicación— y "exactamente un agregado" —cada hallazgo se deduplica
+> por su cuenta, y varios agregados no se estorban.
+>
+> `GROUP BY` se queda fuera porque ahí "el valor reportado" no es un número, es una
+> columna de números, y el par reportado/deduplicado deja de tener sentido.
+>
+> **Lo que NO cambia, y es el principio entero: `deduplicated_value` se recalcula
+> contra la base, nunca se aproxima dividiendo.** Ensanchar *cuándo* se mide no es
+> aflojar *cómo* se mide.
+>
+> Guard nuevo que vino con el ensanche: la sonda de deduplicado cuenta sus propias
+> filas y las compara contra `COUNT(DISTINCT T.rowid)`. Si el valor agregado **no
+> está determinado por la fila de `T`** —porque la expresión mira además otra tabla
+> que se duplica— el `DISTINCT` deja más de una fila por rowid y el resultado sería
+> una cifra torcida. En ese caso el campo se queda en `null`.
+>
+> **Medido el 2026-07-30: pasa de 0 a 6 de 25 hallazgos.** Y entre esos 6 están las
+> ids 40, 41 y 43, que reproducen desde cero la cifra que este proyecto viene
+> citando desde la rebanada 2: `reported_value` 14,388,050,000 contra
+> `deduplicated_value` 348,500,000, `value_inflation` **41.285653**.
+
 **`value_inflation` no se aproxima nunca con `row_multiplier`.** Medido: dividir por
 `row_multiplier` da 359,701,250 contra 348,500,000 reales, 3.21% de error en una
 cifra que se vería exacta.

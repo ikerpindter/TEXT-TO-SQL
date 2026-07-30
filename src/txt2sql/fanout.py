@@ -246,6 +246,7 @@ class Candidate:
     join_path: tuple[str, ...]
     has_group_by: bool
     columns: tuple[str, ...]
+    counts_identity: bool
     select: exp.Select = field(repr=False)
     argument: exp.Expression | None = field(default=None, repr=False)
     node: exp.Expression | None = field(default=None, repr=False)
@@ -609,6 +610,34 @@ def _shape_for(alias: str, edges: list[JoinEdge], alias_table: dict[str, str]):
 # --------------------------------------------------------------------------
 # Guards de alcance y pasada estática
 # --------------------------------------------------------------------------
+def _counts_identity(
+    function: str,
+    aliases: list[str],
+    own_columns: list[exp.Column],
+    table: str,
+    cat: catalog_mod.Catalog,
+) -> bool:
+    """¿El agregado es `COUNT` de la identidad de fila de `T`?
+
+    Es el único caso donde `row_multiplier` **es** el factor de inflación del
+    valor, y no por una coincidencia de los datos sino por aritmética: sobre la
+    fuente duplicada `COUNT(T.pk)` cuenta exactamente las filas que aportan, y
+    deduplicado cuenta las filas distintas, así que el cociente **es** el
+    multiplicador, por definición y con cualquier dato.
+
+    Exige que el agregado toque una sola columna de una sola tabla. `COUNT(T.x)`
+    de una columna cualquiera **no** califica aunque hoy diera lo mismo: si `x`
+    admite nulos, numerador y denominador dejan de encogerse a la par.
+    """
+    if function != "COUNT" or len(aliases) != 1 or len(own_columns) != 1:
+        return False
+    name = own_columns[0].name.lower()
+    if name in catalog_mod.ROWID_ALIASES:
+        return True
+    primary_key = cat.primary_keys.get(table, [])
+    return len(primary_key) == 1 and name == primary_key[0].lower()
+
+
 def _guard_statement(tree: exp.Expression) -> None:
     """Lo que se decide del árbol completo, antes de calificar nada."""
     # `exp.SetOperation` es la clase base de Union, Intersect y Except en 30.14.0,
@@ -749,6 +778,7 @@ def static_scan(sql: str, cat: catalog_mod.Catalog) -> StaticScan:
                 if guard is not None:
                     raise OutOfScope(guard, source.name)
 
+                own_columns = [column for column in columns if column.table == alias]
                 shape, one_side, many_side, path = _shape_for(alias, edges, alias_table)
                 scan.candidates.append(
                     Candidate(
@@ -764,13 +794,10 @@ def static_scan(sql: str, cat: catalog_mod.Catalog) -> StaticScan:
                         # Solo las columnas de ESTA tabla: es lo que el render
                         # necesita para nombrar qué se sumó de más.
                         columns=tuple(
-                            sorted(
-                                {
-                                    f"{source.name}.{column.name}"
-                                    for column in columns
-                                    if column.table == alias
-                                }
-                            )
+                            sorted({f"{source.name}.{c.name}" for c in own_columns})
+                        ),
+                        counts_identity=_counts_identity(
+                            function, aliases, own_columns, source.name, cat
                         ),
                         select=select,
                         argument=argument,
@@ -917,8 +944,18 @@ def _deduplicated_value(
     inner.set("distinct", exp.Distinct())
 
     prefix = f"{with_clause.sql(dialect=DIALECT)} " if with_clause is not None else ""
-    sql = f'{prefix}SELECT {function}("__value") FROM ({inner.sql(dialect=DIALECT)})'
-    return conn.execute(sql).fetchone()[0]
+    # El `COUNT(*)` de afuera **no es decoración**: si el valor no está determinado
+    # por la fila de `T` —porque la expresión también mira otra tabla que se
+    # duplica— el `DISTINCT` deja más de una fila por rowid y el agregado saldría
+    # mal. Quien llama compara este conteo contra `COUNT(DISTINCT T.rowid)` y, si
+    # no cuadran, deja el valor en `null` en vez de reportar una cifra torcida.
+    sql = (
+        f'{prefix}SELECT COUNT(*), {function}("__value")'
+        f' FROM ({inner.sql(dialect=DIALECT)})'
+        f' WHERE "__rid" IS NOT NULL'
+    )
+    row = conn.execute(sql).fetchone()
+    return int(row[0]), row[1]
 
 
 # --------------------------------------------------------------------------
@@ -1027,6 +1064,7 @@ def analyze(
         )
 
     findings: list[Finding] = []
+    pairs: list[tuple[Candidate, Finding]] = []
     for candidate in scan.candidates:
         try:
             source_rows, contributing, distinct = _probe_counts(
@@ -1045,24 +1083,19 @@ def analyze(
             # SOLO existe cuando la medición encontró duplicación.
             if candidate.shape == UNEXPLAINED:
                 continue
-            findings.append(
-                _make_finding(
-                    candidate,
-                    row_multiplier=None,
-                    subcase=EMPTY_SOURCE if source_rows == 0 else T_ABSENT,
-                    source_rows=source_rows,
-                    contributing=contributing,
-                    distinct=distinct,
-                )
+            finding = _make_finding(
+                candidate,
+                row_multiplier=None,
+                subcase=EMPTY_SOURCE if source_rows == 0 else T_ABSENT,
+                source_rows=source_rows,
+                contributing=contributing,
+                distinct=distinct,
             )
-            continue
-
-        multiplier = contributing / distinct
-        if candidate.shape == UNEXPLAINED and multiplier <= 1.0:
-            continue
-
-        findings.append(
-            _make_finding(
+        else:
+            multiplier = contributing / distinct
+            if candidate.shape == UNEXPLAINED and multiplier <= 1.0:
+                continue
+            finding = _make_finding(
                 candidate,
                 row_multiplier=multiplier,
                 subcase=None,
@@ -1070,9 +1103,11 @@ def analyze(
                 contributing=contributing,
                 distinct=distinct,
             )
-        )
 
-    _fill_values(conn, scan, findings)
+        findings.append(finding)
+        pairs.append((candidate, finding))
+
+    _fill_values(conn, scan, pairs)
 
     if not findings and scan.unattributed_aggregates:
         # Nada que reportar Y un agregado sensible que no se pudo verificar. El
@@ -1149,56 +1184,72 @@ def _make_finding(
     )
 
 
-# El caso angosto donde `deduplicated_value` existe. Fuera de aquí va `null` y no
-# se aproxima. `TOTAL` entra porque es `SUM` con otro nombre en SQLite.
-_NARROW_FUNCTIONS = frozenset({"SUM", "COUNT", "TOTAL"})
-
-
 def _fill_values(
-    conn: sqlite3.Connection, scan: StaticScan, findings: list[Finding]
+    conn: sqlite3.Connection,
+    scan: StaticScan,
+    pairs: list[tuple[Candidate, Finding]],
 ) -> None:
-    """Valor reportado y valor deduplicado, solo donde se pueden medir de verdad.
+    """Valor reportado y valor deduplicado, para cada hallazgo que los admita.
 
-    Exige exactamente un hallazgo, que viva en el scope de más afuera y que no
-    haya `GROUP BY`: con varios agregados o varios grupos, "el valor reportado" no
-    es un número, es una tabla.
+    > **Corrección 2026-07-30: el caso angosto estaba demasiado angosto.**
+    >
+    > Las condiciones originales eran cuatro —exactamente un agregado marcado,
+    > forma `fan_trap`, `SUM` o `COUNT` sobre una columna del lado "uno", y sin
+    > `GROUP BY`— y **medido sobre el corpus dispararon 0 de 25 veces.** Una regla
+    > que nunca aplica no protege de nada. Se quitan las dos primeras: quedan
+    > **sin `GROUP BY`** y **`T` es tabla base**.
+    >
+    > Lo que **no** cambia es el principio: `deduplicated_value` se **recalcula
+    > contra la base**, nunca se aproxima dividiendo. Ensanchar cuándo se mide no
+    > es lo mismo que aflojar cómo se mide.
+
+    `GROUP BY` se queda fuera porque ahí "el valor reportado" no es un número, es
+    una columna de números, y el par reportado/deduplicado deja de tener sentido.
     """
-    if len(findings) != 1 or len(scan.candidates) != 1:
-        return
-    finding, candidate = findings[0], scan.candidates[0]
-    if finding.row_multiplier is None or candidate.has_group_by:
-        return
-    if candidate.select is not scan.root or candidate.node is None:
-        return
+    for candidate, finding in pairs:
+        if finding.row_multiplier is None or candidate.has_group_by:
+            continue
 
-    try:
-        finding.reported_value = _reported_value(
-            conn, candidate.select, scan.root, candidate.node
-        )
-    except sqlite3.Error:
-        return
+        # `COUNT` de la identidad de fila: aquí `value_inflation` es exacto por
+        # aritmética y **no depende de medir nada más**, así que se llena antes de
+        # tocar la base y sobrevive aunque las sondas de valor fallen.
+        if candidate.counts_identity:
+            finding.value_inflation = finding.row_multiplier
 
-    if candidate.shape != FAN_TRAP or candidate.function not in _NARROW_FUNCTIONS:
-        return
-    if candidate.argument is None:
-        return
+        if candidate.node is None:
+            continue
+        try:
+            finding.reported_value = _reported_value(
+                conn, candidate.select, scan.root, candidate.node
+            )
+        except sqlite3.Error:
+            continue
 
-    try:
-        finding.deduplicated_value = _deduplicated_value(
-            conn,
-            candidate.select,
-            scan.root,
-            candidate.alias,
-            candidate.argument,
-            "SUM" if candidate.function == "TOTAL" else candidate.function,
-        )
-    except sqlite3.Error:
-        return
+        if candidate.argument is None:
+            continue
+        try:
+            rows, value = _deduplicated_value(
+                conn,
+                candidate.select,
+                scan.root,
+                candidate.alias,
+                candidate.argument,
+                candidate.function,
+            )
+        except sqlite3.Error:
+            continue
 
-    reported, deduplicated = finding.reported_value, finding.deduplicated_value
-    if (
-        isinstance(reported, (int, float))
-        and isinstance(deduplicated, (int, float))
-        and deduplicated
-    ):
-        finding.value_inflation = _round(reported / deduplicated)
+        if rows != finding.distinct_rows:
+            # El valor no está determinado por la fila de `T`, así que no hay un
+            # "mismo agregado sin duplicación" que calcular. Se deja en `null`.
+            continue
+        finding.deduplicated_value = value
+
+        reported = finding.reported_value
+        if (
+            finding.value_inflation is None
+            and isinstance(reported, (int, float))
+            and isinstance(value, (int, float))
+            and value
+        ):
+            finding.value_inflation = _round(reported / value)

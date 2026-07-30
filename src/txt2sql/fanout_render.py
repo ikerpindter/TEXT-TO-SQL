@@ -152,13 +152,39 @@ def _consequence(finding: fanout.Finding) -> list[str]:
 def _how_wrong(finding: fanout.Finding) -> list[str]:
     """Cuánto cambia la cifra. Solo si se midió; si no, se dice que no se midió."""
     if finding.value_inflation is not None:
-        return [
-            f"Qué tanto cambia el número: {_times(finding.value_inflation)}x.",
-            f"Sin la repetición, {finding.aggregate} da"
-            f" {_number(finding.deduplicated_value)} en vez de"
-            f" {_number(finding.reported_value)}.",
-            "Ese valor es un diagnóstico, no la respuesta a tu pregunta.",
-        ]
+        inflation = finding.value_inflation
+        # La dirección no se asume. Para `SUM` y `COUNT` el efecto siempre va
+        # hacia arriba, pero para `AVG` el resultado se vuelve un promedio
+        # ponderado y puede ir hacia abajo: medido sobre esta base, A3 da 0.9983.
+        # Decir "inflado 0.99x" sería decir lo contrario de lo que pasó.
+        if inflation > 1:
+            lead = (
+                f"El número quedó {_times(inflation)}x más alto que el que daría"
+                f" sin la repetición."
+            )
+        elif inflation < 1:
+            lead = (
+                f"El número quedó por DEBAJO del que daría sin la repetición:"
+                f" un {(1 - inflation) * 100:.2f}% más bajo."
+            )
+        else:
+            lead = "El número no se movió, aunque las filas sí se repitieron."
+        lines = [lead]
+        if finding.deduplicated_value is not None:
+            lines.append(
+                f"Sin la repetición, {finding.aggregate} da"
+                f" {_number(finding.deduplicated_value)} en vez de"
+                f" {_number(finding.reported_value)}."
+            )
+            lines.append("Ese valor es un diagnóstico, no la respuesta a tu pregunta.")
+        else:
+            # Pasa con `COUNT` de la identidad de fila: el factor es exacto por
+            # aritmética aunque las sondas de valor no hayan corrido.
+            lines.append(
+                "El factor es exacto: cuentas la identidad de una fila, así que"
+                " el conteo se infla justo lo que se repiten las filas."
+            )
+        return lines
     # Ésta es la línea que define el proyecto. El multiplicador NO es el factor de
     # error de la cifra y no se puede convertir en uno.
     detail = (

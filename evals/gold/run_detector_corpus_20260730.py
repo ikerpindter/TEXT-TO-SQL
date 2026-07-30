@@ -34,6 +34,7 @@ distribución sale agregada sobre las 49.
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import sys
@@ -67,6 +68,27 @@ def table(rows: list[tuple[str, ...]], headers: tuple[str, ...]) -> list[str]:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(prog="run_detector_corpus_20260730")
+    parser.add_argument(
+        "--out",
+        default=str(OUTPUT),
+        help=(
+            "archivo de resultados a escribir. Si cambia cualquier regla del"
+            " detector, va un archivo NUEVO con la variable en el nombre"
+        ),
+    )
+    args = parser.parse_args()
+    out_path = Path(args.out)
+
+    # Los archivos de `evals/results/` son mediciones y no se editan: si cambia una
+    # variable, el resultado va en un archivo nuevo. Esto deja de depender de que
+    # alguien se acuerde, igual que `batch.py` con las corridas.
+    if out_path.exists():
+        print(f"ya existe {out_path}.")
+        print("Un archivo de resultados no se sobrescribe: usa --out con un nombre")
+        print("nuevo que lleve la variable que cambió.")
+        return 1
+
     corpus = json.loads(CORPUS.read_text(encoding="utf-8"))
     entries = corpus["entries"]
     total = len(entries)
@@ -397,9 +419,15 @@ def main() -> int:
     add("pero el hueco existe y es la deuda más grande que deja esta etapa.")
     add("")
 
-    OUTPUT.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-    print(f"escrito: {OUTPUT.relative_to(REPO_ROOT).as_posix()}")
+    resolved = out_path.resolve()
+    shown = (
+        resolved.relative_to(REPO_ROOT).as_posix()
+        if resolved.is_relative_to(REPO_ROOT)
+        else str(resolved)
+    )
+    print(f"escrito: {shown}")
     print(f"entradas: {total}")
     for verdict in fanout.VERDICTS:
         print(f"  {verdict:22s} {verdicts.get(verdict, 0):3d} de {total}")
