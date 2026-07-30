@@ -64,7 +64,15 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 from txt2sql import catalog as catalog_mod  # noqa: E402
 from txt2sql import db, fanout  # noqa: E402
 
-CORPUS = REPO_ROOT / "evals" / "gold" / "corpus_sql_adversarial.json"
+GOLD = REPO_ROOT / "evals" / "gold"
+# Dos archivos, y son dos a propósito. `corpus_sql_adversarial.json` quedó
+# congelado en cuanto produjo una medición —el gate de 21 de 21 del commit
+# `b0de43d`— así que los casos nuevos van en un archivo aparte con la variable en
+# el nombre, nunca como una edición del congelado. El gate los corre juntos.
+CORPORA = (
+    GOLD / "corpus_sql_adversarial.json",
+    GOLD / "corpus_sql_adversarial_guards_20260730.json",
+)
 
 exp = sqlglot.exp
 
@@ -84,6 +92,19 @@ def db_sha256(path: Path) -> str:
 # --------------------------------------------------------------------------
 # Medición de precondiciones, independiente del veredicto
 # --------------------------------------------------------------------------
+def build_fixture(fixture: dict) -> sqlite3.Connection:
+    """La base en memoria de un caso que no puede vivir en `portfolio.db`.
+
+    Dos de los cuatro guards —`WITHOUT ROWID` y la columna que sombrea `rowid`—
+    son propiedades del **catálogo**, no del SQL. Medido: cero blanco en
+    `portfolio.db`, así que ninguna cadena de SQL contra esa base los alcanza y un
+    caso sin fixture sería un caso que no puede fallar.
+    """
+    conn = sqlite3.connect(":memory:")
+    conn.executescript(fixture["ddl"])
+    return conn
+
+
 def _locate(sql: str, cat: catalog_mod.Catalog, table: str):
     """El scope y el alias donde vive `table` como tabla base.
 
@@ -98,6 +119,38 @@ def _locate(sql: str, cat: catalog_mod.Catalog, table: str):
             if isinstance(source, exp.Table) and source.name == table:
                 return scope.expression, qualified, alias
     raise PreconditionError(f"{table} no aparece como tabla base en ninguna fuente")
+
+
+def _locate_alias(sql: str, cat: catalog_mod.Catalog, alias: str):
+    """El scope donde vive `alias`, sea tabla base o no.
+
+    Existe para el caso de la fuente **no** base: ahí el punto es justamente que
+    el alias no es una `exp.Table`, así que `_locate` no lo encontraría.
+    """
+    qualified = fanout.qualify_tree(fanout.parse(sql), cat)
+    for scope in reversed(traverse_scope(qualified)):
+        if isinstance(scope.expression, exp.Select) and alias in scope.sources:
+            return scope.expression, qualified, scope.sources[alias]
+    raise PreconditionError(f"el alias {alias!r} no aparece en ninguna fuente")
+
+
+def _counts_for_alias(
+    conn: sqlite3.Connection, sql: str, cat, alias: str
+) -> tuple[int, int, int]:
+    """Las tres cuentas, para un alias que puede no ser tabla base."""
+    select, root, _source = _locate_alias(sql, cat, alias)
+    probe = fanout.row_source(select, root)
+    quoted = alias.replace('"', '""')
+    probe.set(
+        "expressions",
+        sqlglot.parse_one(
+            f'SELECT COUNT(*), COUNT("{quoted}"."rowid"),'
+            f' COUNT(DISTINCT "{quoted}"."rowid")',
+            dialect=fanout.DIALECT,
+        ).expressions,
+    )
+    row = conn.execute(probe.sql(dialect=fanout.DIALECT)).fetchone()
+    return int(row[0]), int(row[1]), int(row[2])
 
 
 def _counts(conn: sqlite3.Connection, sql: str, cat, table: str) -> tuple[int, int, int]:
@@ -149,6 +202,43 @@ def measure(conn: sqlite3.Connection, cat, case: dict, metric: str, table: str):
             )
         return _counts(conn, sql, cat, table)[1]
 
+    if metric == "rowid_query_raises":
+        # `WITHOUT ROWID`: la query original corre limpia, así que el motor no
+        # avisa. Lo único que delata la tabla es que `T.rowid` no compila.
+        try:
+            _counts(conn, sql, cat, table)
+        except sqlite3.Error:
+            return True
+        return False
+
+    if metric == "shadowed_row_multiplier":
+        # El guard que MIENTE en vez de tronar: con una columna llamada `rowid`,
+        # `COUNT(DISTINCT T.rowid)` cuenta valores de la columna del usuario y el
+        # multiplicador sale torcido sin ningún error.
+        _source, contributing, distinct = _counts(conn, sql, cat, table)
+        if distinct == 0:
+            raise PreconditionError("COUNT(DISTINCT T.rowid) es 0")
+        return contributing / distinct
+
+    if metric == "non_base_count_rowid":
+        alias = case["precondition"].get("target_alias", table)
+        source, contributing, _distinct = _counts_for_alias(conn, sql, cat, alias)
+        if source <= 0:
+            raise PreconditionError(
+                "la fuente está vacía, así que el caso no prueba la"
+                " clasificación silenciosa"
+            )
+        return contributing
+
+    if metric == "correlated_scopes_in_projection":
+        qualified = fanout.qualify_tree(fanout.parse(sql), cat)
+        return sum(
+            1
+            for scope in traverse_scope(qualified)
+            if getattr(scope, "is_correlated_subquery", False)
+            and fanout._in_projection(scope.expression)
+        )
+
     raise PreconditionError(f"métrica desconocida: {metric!r}")
 
 
@@ -165,7 +255,9 @@ def check_precondition(conn: sqlite3.Connection, cat, case: dict) -> str:
 
     got = measure(conn, cat, case, metric, table)
 
-    if op == "==":
+    if isinstance(expected, bool):
+        ok = bool(got) is expected
+    elif op == "==":
         # Las constantes declaradas vienen con un decimal (39.7, 2.0), así que la
         # comparación se hace con tolerancia y no con `==` de flotantes.
         ok = abs(float(got) - float(expected)) < 1e-9
@@ -217,36 +309,48 @@ def compare(case: dict, result: fanout.FanoutResult) -> list[str]:
 
 
 def main() -> int:
-    corpus = json.loads(CORPUS.read_text(encoding="utf-8"))
     database = db.db_path()
-
     print(f"sqlglot {sqlglot.__version__}   dialecto {fanout.DIALECT!r}")
-    print(f"corpus  {CORPUS.relative_to(REPO_ROOT).as_posix()}")
 
-    # Gate cero. Decisión pre-registrada: si el hash no cuadra, se para todo.
-    actual = db_sha256(database)
-    declared = corpus["db_sha256"]
-    if actual != declared:
-        print("\nEL HASH DE LA BASE NO CUADRA. Se para todo.")
-        print(f"  declarado en el corpus: {declared}")
-        print(f"  medido en {database}:   {actual}")
-        print("Un corpus cuya base cambió no es un corpus.")
-        return 2
-    print(f"hash de la base CUADRA: {actual[:16]}...\n")
+    cases: list[dict] = []
+    for path in CORPORA:
+        corpus = json.loads(path.read_text(encoding="utf-8"))
+        declared = corpus["case_count"]
+        if len(corpus["cases"]) != declared:
+            print(f"{path.name} declara {declared} casos y trae {len(corpus['cases'])}")
+            return 2
 
-    conn = db.connect()
-    cat = catalog_mod.load(conn)
+        # Gate cero, por archivo. Decisión pre-registrada: si el hash no cuadra,
+        # se para todo. Un corpus cuya base cambió no es un corpus.
+        actual = db_sha256(database)
+        if actual != corpus["db_sha256"]:
+            print("\nEL HASH DE LA BASE NO CUADRA. Se para todo.")
+            print(f"  declarado en {path.name}: {corpus['db_sha256']}")
+            print(f"  medido en {database}:     {actual}")
+            return 2
 
-    cases = corpus["cases"]
-    if len(cases) != corpus["case_count"]:
-        print(f"el corpus declara {corpus['case_count']} casos y trae {len(cases)}")
-        return 2
+        print(f"corpus  {path.relative_to(REPO_ROOT).as_posix()}  ({declared} casos)")
+        cases.extend(corpus["cases"])
+
+    print(f"hash de la base CUADRA: {db_sha256(database)[:16]}...")
+    print(f"total: {len(cases)} casos\n")
+
+    base_conn = db.connect()
+    base_cat = catalog_mod.load(base_conn)
 
     voided: list[str] = []
     failed: list[str] = []
 
     for case in cases:
         case_id = case["id"]
+        fixture = case.get("fixture")
+        if fixture:
+            conn = build_fixture(fixture)
+            cat = catalog_mod.load(conn)
+            where = f" [fixture {fixture['name']}]"
+        else:
+            conn, cat, where = base_conn, base_cat, ""
+
         try:
             detail = check_precondition(conn, cat, case)
         except (PreconditionError, sqlite3.Error, fanout.OutOfScope) as exc:
@@ -254,7 +358,7 @@ def main() -> int:
             # anota como aviso: falla, porque un verde sobre un caso muerto es peor
             # que un rojo.
             voided.append(case_id)
-            print(f"ANULADO  {case_id}  precondición no se cumple")
+            print(f"ANULADO  {case_id}  precondición no se cumple{where}")
             print(f"         {type(exc).__name__}: {exc}")
             continue
 
@@ -262,7 +366,7 @@ def main() -> int:
         problems = compare(case, result)
         if problems:
             failed.append(case_id)
-            print(f"FALLA    {case_id}  {detail}")
+            print(f"FALLA    {case_id}  {detail}{where}")
             for problem in problems:
                 print(f"         {problem}")
         else:
@@ -271,7 +375,8 @@ def main() -> int:
                 result.findings[0].row_multiplier if result.findings else None
             )
             extra = f" mult={multiplier}" if multiplier is not None else ""
-            print(f"ok       {case_id}  {result.verdict}  shape={shape}{extra}")
+            reason = f" reason={result.reason}" if result.reason else ""
+            print(f"ok       {case_id}  {result.verdict}  shape={shape}{extra}{reason}{where}")
             print(f"         precondición: {detail}")
 
     print()
@@ -284,7 +389,7 @@ def main() -> int:
     if failed or voided:
         print("\nEl gate NO pasa. El detector no avanza.")
         return 1
-    print("21 de 21. El gate pasa.")
+    print(f"{len(cases)} de {len(cases)}. El gate pasa.")
     return 0
 
 
