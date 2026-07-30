@@ -18,6 +18,34 @@ está en `.gitignore`: **el guardrail más importante del proyecto era el único
 sobrevivía a un clone limpio.** Sigue también en `CLAUDE.md` y en
 `evals/gold/LABELING_CRITERIA.md`, con la misma redacción en los tres.
 
+Cobertura del patrón, medida el 29 de julio de 2026 con `pathlib.glob`, `fnmatch` y
+el glob del shell, los tres coincidiendo:
+
+| | |
+|---|---|
+| Cubre hoy | `evals/gold/worksheet_holdout.md` |
+| Cubriría | `labels_holdout.md`, `holdout_labels.md`, `fanout_labels_holdout.md` |
+| **No** cubre, y así debe ser | `worksheet_dev.md`, `labels_dev.md`, `split_assignment.json`, `worksheet_keymap.json` |
+
+### Las etiquetas viven en las worksheets
+
+**No hay archivo de etiquetas aparte.** `worksheet_dev.md` y `worksheet_holdout.md`
+se llenan en su lugar, sobre las líneas `LABEL:` que ya están vacías.
+
+La razón es la evidencia: las worksheets vacías están congeladas en la historia, así
+que **el diff del commit de etiquetas muestra exactamente lo que se agregó contra el
+papel en blanco**, con fecha y sin nada alrededor. Eso prueba que no se etiquetó
+mirando el output del detector mejor que dos archivos que hay que cotejar a mano.
+
+**En cuanto haya una etiqueta escrita, ese archivo queda congelado en forma dura**,
+porque a partir de ahí es una medición. Una corrección va como **nota fechada**,
+nunca como reescritura. Es el mismo protocolo de `evals/results/`.
+
+Y no depende de que alguien se acuerde:
+`evals/gold/make_worksheets_20260729.py` **se niega a escribir** —exit 2, con
+mensaje— si el destino ya tiene alguna línea `LABEL:` con valor. Verificado el
+29 de julio de 2026 escribiendo una etiqueta de prueba y confirmando la negativa.
+
 No hay nada que la haga cumplir. Es una promesa, igual que el ciego de las
 worksheets, y por eso la segunda mitad de la regla importa tanto como la primera: **un
 holdout abierto y reportado sigue siendo evidencia de algo; uno abierto en silencio

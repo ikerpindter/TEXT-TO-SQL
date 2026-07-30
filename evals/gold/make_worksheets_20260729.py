@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 import sys
 from datetime import date
 from pathlib import Path
@@ -120,7 +121,37 @@ desacuerdos.**
 """
 
 
+# Una linea LABEL: con algo que no sea espacio. Las worksheets vacias traen
+# "LABEL:" pelado, asi que esto distingue papel en blanco de medicion.
+LABELED_RE = re.compile(r"^LABEL:[ \t]*\S", re.M)
+
+
+def labeled_cases(path: Path) -> int:
+    """Cuantas lineas LABEL: traen valor. 0 si el archivo no existe."""
+    if not path.exists():
+        return 0
+    return len(LABELED_RE.findall(path.read_text("utf-8")))
+
+
 def main() -> int:
+    # GUARD DURO: una worksheet con etiquetas escritas es una MEDICION.
+    # Regenerarla la destruye, y eso no puede depender de que alguien se acuerde.
+    with_labels = [(p, n) for p in OUT.values() if (n := labeled_cases(p))]
+    if with_labels:
+        print("ME NIEGO A ESCRIBIR: hay etiquetas escritas.")
+        print()
+        for path, n in with_labels:
+            print(f"  {path.name}: {n} lineas LABEL: con valor")
+        print()
+        print("Una worksheet con etiquetas es una MEDICION, no una plantilla.")
+        print("Regenerarla la destruiria y el diff contra el papel en blanco, que es")
+        print("la evidencia de que no se etiqueto mirando el output del detector,")
+        print("se perderia sin dejar rastro.")
+        print()
+        print("Si de verdad hay que rehacer las worksheets, primero se decide que")
+        print("pasa con esas etiquetas y se deja escrito. No se resuelve aqui.")
+        return 2
+
     existing = [p for p in [KEYMAP, *OUT.values()] if p.exists()]
     if existing:
         print("ya existen, borralos a mano si de verdad quieres rehacerlos:")

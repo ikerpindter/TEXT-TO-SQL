@@ -143,9 +143,20 @@ señala: un `RECONOCIDO:` mal tecleado tiene que ser visible.
 2. **Criterios, luego etiquetas, luego detector.** En ese orden y en commits
    separados. El orden de los commits es la evidencia de que no se etiquetó mirando
    el output.
-3. **Una vez commiteadas, las etiquetas no se editan.** Ahí sí aplica el congelado en
-   su forma dura: son mediciones. Una corrección va como nota fechada, nunca como
-   reescritura.
+3. **Las etiquetas viven en estas worksheets, no en archivos aparte.** Se llenan en
+   su lugar, sobre las líneas `LABEL:` que ya están vacías.
+
+   La razón es la evidencia: las worksheets vacías están congeladas en la historia de
+   git, así que **el diff del commit de etiquetas muestra exactamente lo que
+   agregaste contra el papel en blanco.** Eso prueba que no se etiquetó mirando el
+   output del detector mejor que dos archivos que hay que cotejar.
+
+   **En cuanto escribas una etiqueta, ese archivo queda congelado en forma dura**,
+   porque a partir de ahí es una medición. Una corrección va como **nota fechada**,
+   nunca como reescritura.
+
+   `make_worksheets_20260729.py` se niega a regenerar una worksheet que ya tenga
+   alguna línea `LABEL:` con valor. No depende de que te acuerdes.
 4. **Nada que haga match con `evals/gold/*holdout*` se lee, se abre ni entra a la
    construcción del detector hasta la etapa 4. Aplica a archivos que todavía no
    existen. Si se abre alguno antes, se dice en voz alta y el holdout queda
