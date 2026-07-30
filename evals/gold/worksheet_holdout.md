@@ -1,3 +1,33 @@
+<!-- SELLO DE HOLDOUT. No lo borres sin decirlo: borrarlo es el rastro. -->
+
+> **ARCHIVO SELLADO. Esto es el holdout.**
+>
+> Nada que haga match con `evals/gold/*holdout*` se lee, se abre ni entra a la
+> construccion del detector hasta la etapa 4. Aplica a archivos que todavia no
+> existen. **Si se abre alguno antes, se dice en voz alta y el holdout queda
+> quemado.**
+>
+> Si estas leyendo esto y no es la etapa 4: ya lo abriste. Dilo. **Un holdout
+> abierto y reportado sigue siendo evidencia de algo; uno abierto en silencio
+> no.**
+>
+> **Estado al 30 de julio de 2026: contenido sin leer.** Esta cabecera se
+> escribio SIN abrir el archivo: se antepuso con `cat` desde un archivo aparte y
+> se verifico solo con conteos, asi que ni el SQL ni ninguna etiqueta pasaron por
+> pantalla. El detector de fan-out de la rebanada 3 se construyo sin leer nada de
+> aqui.
+>
+> **Ojo, y no es letra chica.** El holdout quedo **sin funcion para el detector
+> de la rebanada 3**, porque ese detector nunca se afino contra dev: se construyo
+> contra casos adversarios escritos a mano y contra una sonda sobre las 49
+> entradas completas, sin partir. Eso **NO lo libera.** Sigue sellado, y recupera
+> su funcion cuando una rebanada construya un detector afinado contra dev.
+>
+> Este sello vive DENTRO del archivo a proposito: una nota en un documento aparte
+> no detiene a quien abre el archivo directamente, y se rompe sin dejar rastro.
+>
+> Contexto completo en `docs/ROADMAP.md`.
+
 # Worksheet ciega de etiquetado: holdout
 
 Generada el 2026-07-30. 24 entradas del corpus real.

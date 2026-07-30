@@ -51,6 +51,39 @@ worksheets, y por eso la segunda mitad de la regla importa tanto como la primera
 holdout abierto y reportado sigue siendo evidencia de algo; uno abierto en silencio
 no.**
 
+### El sello viaja DENTRO del archivo
+
+**Agregado el 30 de julio de 2026.**
+
+**Todo archivo sellado lleva su sello como cabecera dentro de sí mismo, no solo como
+nota en un documento aparte.** Hasta hoy la regla del holdout vivía en tres archivos
+—éste, `CLAUDE.md` y `LABELING_CRITERIA.md`— y en ninguno de ellos: el archivo
+protegido no decía nada sobre sí mismo.
+
+Dos razones, y la segunda es la que importa:
+
+1. **Una nota externa no detiene a nadie.** Quien abre el archivo directamente
+   —`cat`, un editor, un `grep` que devuelve contexto— nunca pasa por el documento
+   que contiene la regla. El sello tiene que estar donde está el riesgo.
+2. **Una nota externa se rompe sin dejar rastro.** Si alguien lee el holdout y no lo
+   dice, no queda evidencia en ningún lado. Con el sello dentro, romperlo a
+   conciencia exige **borrar el sello**, y eso sí aparece en un diff. No lo hace
+   imposible; lo hace visible, que es todo lo que este proyecto puede pedirle a una
+   promesa.
+
+Aplicado el 30 de julio de 2026 a `evals/gold/worksheet_holdout.md`, **escribiendo
+la cabecera sin leer el archivo**: se antepuso el bloque con `cat` desde un archivo
+aparte y se verificó solo con conteos —`grep -c`, `diff --stat`— así que ni el SQL
+ni ninguna etiqueta pasaron por pantalla. El ciego sigue intacto y esa afirmación es
+auditable en el commit.
+
+**Hueco conocido, anotado y no cerrado:** `make_worksheets_20260729.py` **no emite el
+sello**, así que una regeneración lo borraría. Hoy no puede pasar sin darse cuenta
+—el script se niega a sobrescribir una worksheet con etiquetas escritas— pero sobre
+una worksheet vacía sí. Cerrarlo es una línea en el generador y le toca a quien lo
+toque después; no se hizo hoy porque este cierre era de documentación y no de
+comportamiento.
+
 ## Orden de rebanadas
 
 Actualizado tras cerrar la rebanada 2.
@@ -1007,6 +1040,93 @@ caso, cualquier cosa que use la mitad dev como señal de diseño. Ese día el ho
 mide justo lo que fue diseñado para medir, y por eso se queda sellado en vez de
 gastarse ahora en una pregunta que no tiene.
 
+### Verificación de independencia: el corpus de la rebanada 2 está contaminado
+
+**Pregunta hecha al cerrar la rebanada 3, el 30 de julio de 2026: durante el
+desarrollo del detector, ¿se leyó o se usó el SQL guardado en `evals/runs/`?**
+
+**Sí. Y no de refilón: el detector se iteró contra ese SQL.**
+
+#### El SQL de `evals/runs/` y el de `corpus_sql.json` son el mismo SQL
+
+Medido, no supuesto. `corpus_sql.json` declara `source_files:
+['ddl_only_n5.json', 'values_text_maxcard20_n5.json']`, y comparando los conjuntos
+con whitespace normalizado:
+
+| | |
+|---|---|
+| SQL crudos en `evals/runs/` | 50, **49 distintos** |
+| Entradas de `corpus_sql.json` | 49 |
+| ¿Idénticos como conjunto? | **Sí** |
+
+Así que "no abrí `evals/runs/`" **no sería una respuesta**, sería un tecnicismo. El
+contenido es el mismo y se usó a fondo. (Los archivos de `evals/runs/` en sí se
+abrieron por primera vez el 30 de julio, ya con el detector terminado, y
+precisamente para contestar esta pregunta.)
+
+#### Qué se hizo con él, en concreto
+
+1. **Antes de escribir una sola línea del detector**, se corrió una sonda
+   estructural sobre las **49** entradas: cuántas traen `COUNT(*)` sobre un join,
+   cuáles unen por algo que no es FK, cuáles agregan sobre una fuente no-base,
+   cuántos scopes tiene cada una, y qué agregados tocan más de una tabla.
+2. **Esos conteos se volvieron decisiones de diseño**, no contexto de fondo:
+   - la regla de `COUNT(*)` salió de medir que toca 12 de las 49;
+   - la atribución **por posición de valor** salió de leer las ids 4 y 26, que
+     agregan `SUM(CASE WHEN c.name IN (...) THEN f.homes_delivered ELSE 0 END)`;
+   - la expectativa de `non_fk_join` salió de encontrar la id 36.
+3. **Dos bugs se encontraron corriendo el detector sobre el corpus**, no leyendo la
+   especificación: la llave `with_` (id 16) y la aridad de fuentes (id 38).
+4. **Una regla se cambió por lo que el corpus devolvió.** `COUNT(*)` pasó de
+   `clean` a `not_analyzed` porque la corrida mostró que marcaba `clean` las ids
+   45, 46 y 48; y el cambio se acotó para no anular la id 47.
+
+Los puntos 3 y 4 están escritos en el mensaje del commit `6cf4903`, que empieza
+con "*All three problems were found by running the detector over the corpus*".
+**La evidencia de la contaminación la dejó el propio autor, fechada y en la
+historia.**
+
+#### Consecuencia, sin suavizar
+
+**Correr el detector sobre esas 49 entradas es una demo, no una medición.** El
+detector fue construido, depurado y corregido contra esas mismas entradas, así que
+su desempeño ahí no dice nada sobre su desempeño en SQL que no haya visto.
+
+Eso reetiqueta lo que ya existe:
+`fanout_corpus_descriptivo_20260730.md` y
+`fanout_corpus_valores_ensanchados_20260730.md` no son solo "descriptivos por falta
+de etiquetas" —que era la razón que traían escrita— sino **descripciones del
+comportamiento del detector sobre las entradas contra las que fue construido.**
+Siguen siendo útiles como registro de comportamiento y como reproducible; no sirven
+como evidencia de generalización, ni antes ni después de que existan etiquetas.
+
+**El corpus de la rebanada 2 queda gastado como superficie de medición
+independiente.** No se puede recuperar: no hay forma de des-ver un corpus.
+
+#### Y esto endurece el hallazgo del holdout, no lo suaviza
+
+La sección de arriba dice que la exposición fue **uniforme** en las dos mitades. Es
+correcto, pero se puede leer al revés de lo que significa. Preciso:
+
+**Uniforme no quiere decir "no hubo contaminación". Quiere decir "hubo
+contaminación en las dos mitades por igual".** El holdout no puede detectarla
+justamente porque no hay diferencia entre las mitades que medir — no porque no la
+haya.
+
+Es el mismo argumento con el que se selló el holdout, aplicado hacia atrás: **la
+independencia se pierde al mirar, no al medir.**
+
+#### Qué necesita la rebanada 4
+
+Una prueba retrodictiva o predictiva del detector necesita **SQL que el detector no
+haya visto**. Como las 49 están gastadas, eso significa **corridas nuevas del
+modelo**, y esas sí se pueden congelar antes de tocarlas.
+
+El diseño de esa corrida se decide en la rebanada 4 y **no se empieza aquí.** Lo
+que queda pre-registrado es la única regla que la hace válida: **el detector no se
+toca después de ver esos resultados.** Si al verlos hay que cambiarle algo, ese
+corpus también queda gastado y hace falta uno nuevo.
+
 ### Qué se congela: un registro de un momento, no un set de tests
 
 **Corrección del 30 de julio de 2026.** La regla decía que `corpus_sql.json` y
@@ -1186,6 +1306,53 @@ Los denominadores vigentes de este corpus, definidos:
 | **49** | Entradas distintas en `corpus_sql.json`. El universo. | nada |
 | **43** | De esas, las que permiten reconstruir la fuente de filas y ejecutar `COUNT(*)` | **6**: ids 16, 28, 36, 38, 45, 47, las seis con CTE |
 | **42** | De esas 43, las que además tienen ≥1 tabla base referenciable por alias | **7**: las 6 con CTE **+ id 17**, por alias de subconsulta no visible en el scope de más afuera |
+
+#### Un número de gate nunca se reporta solo
+
+**Agregado el 30 de julio de 2026.** Es la misma regla del denominador aplicada a la
+única clase de número que parecía exenta.
+
+**Un resultado de gate se reporta siempre con dos cosas pegadas: el commit y el
+conteo de casos.** "25 de 25" solo, sin eso, no es reportable.
+
+La razón es que un número de gate **no mide un sistema, mide una suite en un
+commit**, y las suites crecen. Este mismo repo ya tiene dos que se ven comparables
+y no lo son:
+
+| | Casos | Commit |
+|---|---|---|
+| Gate adversario, primera versión | **21 de 21** | `b0de43d` |
+| Gate adversario, con los cuatro guards | **25 de 25** | `5865127` en adelante |
+
+Los dos son 100%. Leídos sin el conteo, el segundo parece "lo mismo de antes"
+cuando en realidad cubre cuatro modos de falla que el primero no tocaba. Y al revés
+es peor: una suite que **encogió** también da 100%, y sin el conteo se lee como
+salud.
+
+Corolario que ya está aplicado en la sección de congelado: **por eso el 21 de 21
+histórico no se pierde al dejar crecer el set.** Vive en su commit, que es donde
+vive un número de gate.
+
+#### Todo número del README es salida generada, pegada verbatim
+
+**Agregado el 30 de julio de 2026, y la regla se ganó ese mismo día.**
+
+**Ninguna cifra ni bloque de salida del README se teclea a mano.** Se genera
+corriendo el código, se copia verbatim, y si hace falta recortarlo se recorta sin
+reescribir ni un dígito.
+
+El borrador de la sección del detector traía un bloque de salida de ejemplo escrito
+a mano que **mezclaba dos consultas distintas**: el multiplicador 39.7 y las "794
+filas sobre 20 distintas" del caso A1, con los 348,500,000 contra 14,388,050,000 de
+la id 40 del corpus. Cada número era real por separado; juntos describían una
+consulta que no existe. **Se cazó antes de commitear** y el bloque se regeneró
+corriendo el detector sobre la id 40.
+
+Por qué merece ser regla y no una anécdota: **el README es la portada de un
+proyecto cuyo tema es no fabricar precisión.** Un guardrail que reporta un factor
+de inflación que no midió y un README que reporta una salida que nunca se produjo
+son el mismo defecto, y el segundo desacreditaría al primero. Es más barato
+generarlo que revisarlo.
 
 El delta entre 43 y 42 es **exactamente la id 17**. Y un dato contraintuitivo: **con
 la fórmula de `rowid` el denominador sigue siendo 42**, no 43. Yo esperaba que

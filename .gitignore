@@ -7,3 +7,18 @@ CLAUDE.md
 __pycache__
 data/portfolio.db
 evals/results/*.tmp
+
+# Docs de handoff: el contexto que se pega al inicio de una conversación nueva.
+#
+# No se trackean, y sobre todo NO viven en docs/. Ahí compiten con ROADMAP.md
+# como estado autoritativo del proyecto, y pierden: un handoff es una foto de un
+# momento y envejece solo. El que motivó esta regla ya estaba desactualizado el
+# día que apareció, y describía la rebanada 3 como si estuviera por empezar.
+#
+# El patrón cubre las tres formas en que han aparecido —por tema, por rebanada, y
+# la copia con sufijo que deja el navegador— porque un handoff sin trackear que se
+# cuela a docs/ no se nota hasta que alguien lo lee como si fuera la fuente viva.
+*contexto-rebanada*
+*-handoff*
+*handoff-*
+docs/proyecto-*-contexto-*
