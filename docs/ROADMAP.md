@@ -4,14 +4,19 @@ Lectura previa obligatoria antes de tocar nada del repo.
 
 ## La regla del holdout
 
-**`evals/gold/worksheet_holdout.md` no se lee ni se abre hasta la etapa 4, y nada de
-lo que contiene entra a la construcción del detector. Si se abre antes, se dice en
-voz alta y el holdout queda quemado.**
+**Nada que haga match con `evals/gold/*holdout*` se lee, se abre ni entra a la
+construcción del detector hasta la etapa 4. Aplica a archivos que todavía no existen.
+Si se abre alguno antes, se dice en voz alta y el holdout queda quemado.**
+
+**Por patrón y no por nombre**, porque un archivo que aún no existe no se puede
+proteger por nombre, y ése es justamente el próximo que se va a crear: el de las
+etiquetas del holdout. Una regla que nombra `worksheet_holdout.md` deja de cubrir el
+día que aparece cualquier otro artefacto del holdout.
 
 Va aquí, en un archivo trackeado, porque hasta hoy vivía solo en `CLAUDE.md`, que
 está en `.gitignore`: **el guardrail más importante del proyecto era el único que no
-sobrevivía a un clone limpio.** Sigue también en `CLAUDE.md`; esto no lo reemplaza,
-lo respalda.
+sobrevivía a un clone limpio.** Sigue también en `CLAUDE.md` y en
+`evals/gold/LABELING_CRITERIA.md`, con la misma redacción en los tres.
 
 No hay nada que la haga cumplir. Es una promesa, igual que el ciego de las
 worksheets, y por eso la segunda mitad de la regla importa tanto como la primera: **un
@@ -912,8 +917,9 @@ y mapea cada clave opaca a su id del corpus, y de ahí la config sale con una re
 ids 1–25 son `ddl_only`, 26–49 son `values_text_maxcard20`. Nada impide abrirlo
 mientras se etiqueta.
 
-**Es exactamente la misma situación que el holdout.** `fanout_labels_holdout.md` es
-intocable hasta la etapa 4 por una promesa, no por un permiso de archivo.
+**Es exactamente la misma situación que el holdout.** Todo lo que hace match con
+`evals/gold/*holdout*` es intocable hasta la etapa 4 por una promesa, no por un
+permiso de archivo.
 
 **Se anota y no se construye nada para eso.** Cifrar el keymap, sacarlo del repo o
 meterle un hook sería infraestructura para un problema que en este proyecto tiene un

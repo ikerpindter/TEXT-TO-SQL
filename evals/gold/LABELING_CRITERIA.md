@@ -146,8 +146,13 @@ señala: un `RECONOCIDO:` mal tecleado tiene que ser visible.
 3. **Una vez commiteadas, las etiquetas no se editan.** Ahí sí aplica el congelado en
    su forma dura: son mediciones. Una corrección va como nota fechada, nunca como
    reescritura.
-4. **`fanout_labels_holdout.md` es intocable hasta la etapa 4.** No se abre, no se
-   consulta, no se usa para nada mientras se construye el detector.
+4. **Nada que haga match con `evals/gold/*holdout*` se lee, se abre ni entra a la
+   construcción del detector hasta la etapa 4. Aplica a archivos que todavía no
+   existen. Si se abre alguno antes, se dice en voz alta y el holdout queda
+   quemado.**
+
+   Por patrón y no por nombre: un archivo que aún no existe no se puede proteger por
+   nombre. Misma redacción en `docs/ROADMAP.md` y en `CLAUDE.md`.
 5. **La procedencia no se pierde.** Cada entrada del corpus trae `sources[]` con
    archivo, config, pregunta y número de corrida.
 6. **Un desacuerdo se registra, no se promedia.** Si dos etiquetadores discrepan, las
