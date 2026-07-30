@@ -55,9 +55,8 @@ OUT = {"dev": GOLD_DIR / "worksheet_dev.md",
 
 SEED = 20260729
 
-VERDICTS = ["not_analyzed", "no_contributing_rows", "clean",
-            "shape_no_inflation", "inflated"]
-SHAPES = ["fan_trap", "chasm_trap", "unexplained", "-"]
+LABELS = ["shape_present", "shape_absent", "out_of_scope", "unsure"]
+SHAPES = ["fan_trap", "chasm_trap", "unexplained"]
 
 CRITERIA = """\
 ## Criterio, resumido
@@ -66,42 +65,58 @@ CRITERIA = """\
 uno-a-muchos. El join replica esa fila una vez por cada fila del lado "muchos", y la
 agregacion suma el mismo valor varias veces.
 
-Estas juzgando **si el SQL infla por duplicacion de filas**. NO estas juzgando si el
-query contesta bien la pregunta: no sabes cual era la pregunta, y es a proposito.
+Estas juzgando **si la ESTRUCTURA del SQL permite que la duplicacion infle un
+numero.** No estas juzgando si de hecho infla: eso depende de los datos y se mide
+aparte. Tampoco estas juzgando si el query contesta bien la pregunta, porque no
+sabes cual era la pregunta, y es a proposito.
 
-### Los cinco veredictos, en orden de precedencia
+### Las cuatro etiquetas
 
-| Veredicto | Cuando |
+| Etiqueta | Cuando |
 |---|---|
-| `not_analyzed` | No se puede analizar: self join, window function, UNION/INTERSECT/EXCEPT, join que no sigue una FK declarada, o columna ambigua. |
-| `no_contributing_rows` | La tabla agregada no aporta ni una fila a la fuente. El multiplicador es indefinido. |
-| `clean` | Analizable y sin forma de fan-out presente. |
-| `shape_no_inflation` | La forma esta presente pero no duplica: el multiplicador es 1.0. |
-| `inflated` | La forma esta presente y duplica. |
+| `shape_present` | Hay join **mas** agregado tal que la duplicacion de filas **PODRIA** inflar un numero. No afirma que pase, solo que la estructura lo permite. |
+| `shape_absent` | La estructura no lo permite: sin join, o agregado inmune (`DISTINCT`, `MAX`, `MIN`), o el CTE pre-agrega bien. |
+| `out_of_scope` | Self join, window function, `UNION`/`INTERSECT`/`EXCEPT`, join que no sigue una FK declarada, o columna ambigua. |
+| `unsure` | No se puede decidir desde el SQL. **Es una respuesta valida, no un fracaso.** |
 
-**El primero que aplica gana.** Si hay varios hallazgos, manda el peor caso.
+**Estas cuatro NO son los veredictos del detector.** El detector emite otros cinco
+nombres y ninguno coincide con estos, a proposito: tres de sus veredictos exigen
+medir los datos y tu no los estas viendo. La adjudicacion entre los dos vocabularios
+esta escrita en `docs/ROADMAP.md`, **antes de que existiera una sola etiqueta.**
 
-### Las dos formas
+### `SHAPE:` es OPCIONAL
+
+Solo aplica a `shape_present`, y solo si quieres nombrar cual forma es:
 
 - `fan_trap`: se agrega una columna del lado "uno" despues de unir al lado "muchos".
 - `chasm_trap`: dos ramas uno-a-muchos desde un ancestro comun, unidas entre si.
   **Las ramas pueden tener mas de un salto.**
-- `unexplained`: hay duplicacion pero no encaja limpio en ninguna de las dos.
-- `-`: sin forma. Va con `clean` y con `not_analyzed`.
+- `unexplained`: hay estructura duplicadora pero no encaja limpio en ninguna.
+
+**Dejala vacia sin culpa.** Nombrar la forma es un segundo juicio que puede fallar
+independiente del primero, y el primario es el binario.
 
 ### Reglas que no dependen de juicio
 
 - Cualquier agregado con `DISTINCT` es inmune. Tambien `MAX` y `MIN`.
 - Sensibles a duplicacion: `SUM`, `AVG`, `COUNT` sin DISTINCT, `TOTAL`.
-- Una query **sin agregados** no tiene forma: va `clean`.
-- "Forma presente" exige **las dos cosas juntas**: la estructura de joins **y** un
+- Una query **sin agregados** no tiene forma: va `shape_absent`.
+- `shape_present` exige **las dos cosas juntas**: la estructura de joins **y** un
   agregado sensible sobre una columna afectada.
 - Un CTE que pre-agrega a una fila por llave **no duplica**.
 
+### `RECONOCIDA:`
+
+Escribe `si` si reconoces la query de nuestras conversaciones. Dejala vacia si no.
+
+No descarta el caso: se reporta aparte. El ciego sobre esa entrada ya no vale, y eso
+es un dato sobre la etiqueta, no un defecto de ella.
+
 ### Si dudas
 
-Escribe la etiqueta que creas y agrega una nota en la linea `NOTA:`. Un desacuerdo
-registrado vale mas que una etiqueta forzada. **No se promedian los desacuerdos.**
+Usa `unsure` y escribe por que en `NOTA:`. Un `unsure` registrado vale mas que una
+etiqueta forzada, y sale del conteo en lugar de ensuciarlo. **No se promedian los
+desacuerdos.**
 """
 
 
@@ -142,8 +157,10 @@ def main() -> int:
             "El set adversario **no esta aqui** y nunca lo estara: trae su respuesta",
             "declarada por diseno y vive en `corpus_sql_adversarial.json`.",
             "",
-            f"Vocabulario de `LABEL:` -> {', '.join(VERDICTS)}",
-            f"Vocabulario de `SHAPE:` -> {', '.join(SHAPES)}",
+            f"Vocabulario de `LABEL:` -> {', '.join(LABELS)}",
+            f"`SHAPE:` es OPCIONAL, solo para shape_present -> "
+            f"{', '.join(SHAPES)}",
+            "`RECONOCIDA:` -> `si` si reconoces la query, o vacia.",
             "",
             "---",
             "",
@@ -175,6 +192,7 @@ def main() -> int:
                 "```",
                 "LABEL:",
                 "SHAPE:",
+                "RECONOCIDA:",
                 "NOTA:",
                 "```",
                 "",

@@ -1,97 +1,154 @@
 # Criterios de etiquetado del gold set de fan-out
 
-Escrito el 29 de julio de 2026, en la etapa 1 de la rebanada 3. **Antes de que
-exista una sola línea del detector.**
+> **Reescrito el 29 de julio de 2026, en su lugar.** La versión anterior es de la
+> etapa 1 y quedó superada en cuatro puntos: llamaba `no_rows` a lo que ahora es
+> `no_contributing_rows`, decía que tres veredictos estaban sin especificar, decía
+> que no había worksheet todavía, y decía que la worksheet saldría de la unión del
+> corpus con el set adversario. Lo último se revirtió: **el set adversario nunca
+> entra a una worksheet.**
+>
+> Se reescribe en lugar de ir a archivo nuevo porque **nunca produjo una medición.**
+> La regla de congelado protege mediciones; un artefacto que no generó ninguna no
+> tiene nada que proteger, y git guarda la versión vieja. Ver el principio general
+> en `docs/ROADMAP.md`.
 
-Ese orden es el punto entero de este archivo. Si el detector se escribe primero,
-los criterios se acomodan —sin mala intención y sin que nadie lo note— para que
-el detector salga bien. Escribirlos antes es lo que hace que las etiquetas sean
-una medición y no un reflejo del código.
+Escrito **antes de que exista una sola línea del detector**, y ése es el punto
+entero. Si el detector se escribe primero, los criterios se acomodan —sin mala
+intención y sin que nadie lo note— para que el detector salga bien. El orden es lo
+que hace que las etiquetas sean una medición y no un reflejo del código.
 
-## Qué se etiqueta
+---
 
-El corpus congelado en `corpus_sql.json`: **49 SQL distintos**, salidos de las 50
-llamadas de `evals/runs/*.json`.
+## Qué estás etiquetando
 
-En la etapa 1b se le va a unir un set de SQL adversario escrito a mano
-(`corpus_sql_adversarial.json`), y **la worksheet se genera una sola vez de la
-unión de los dos archivos.** Por eso no hay worksheet todavía: generarla ahora
-obligaría a editarla después, y un archivo congelado no se edita.
+Las dos worksheets ciegas: `worksheet_dev.md` (25 casos) y `worksheet_holdout.md`
+(24), sacadas de las 49 entradas distintas de `corpus_sql.json`.
 
-La línea base (`evals/results/baseline_ddl_only.md`) **no entra.** Es evidencia,
-no fuente de datos.
+**No etiquetas el set adversario.** Los 21 casos de `corpus_sql_adversarial.json`
+traen su respuesta declarada por diseño: son unit tests del detector, no una muestra.
+Nunca entran a una worksheet.
 
-## Qué es fan-out, para efectos de etiquetar
+**No etiquetas la línea base.** `evals/results/baseline_ddl_only.md` es evidencia, no
+fuente de datos.
 
-Una agregación que cae sobre una columna del lado "uno" de un join uno-a-muchos.
-El join replica esa fila una vez por cada fila del lado "muchos", y la agregación
-suma el mismo valor varias veces.
+## Qué estás juzgando, exactamente
 
-Es una propiedad **sintáctica** del query contra el catálogo. No hace falta
-conocer la respuesta correcta de la pregunta para etiquetarla, y eso es
-deliberado: el etiquetador no está juzgando si el query contesta bien, está
-juzgando si el query infla.
+**Si la ESTRUCTURA del SQL permite que la duplicación de filas infle un número.**
+
+No si de hecho infla: eso depende de los datos y se mide aparte, corriendo la query.
+Tampoco si el query contesta bien la pregunta: no sabes cuál era la pregunta, y es a
+propósito.
+
+Fan-out es una agregación que cae sobre una columna del lado "uno" de un join
+uno-a-muchos. El join replica esa fila una vez por cada fila del lado "muchos", y la
+agregación suma el mismo valor varias veces.
 
 Las dos puertas ya medidas en la rebanada 2, como calibración:
 
 | Puerta | Forma | Efecto medido |
 |---|---|---|
-| `communities.budget_usd` (Q4) | `SUM` sobre el lado "uno" de un join a `homes` | $14,388,050,000 contra $348,500,000 reales, **inflado 41.3x** |
+| `communities.budget_usd` (Q4) | `SUM` sobre el lado "uno" de un join a `homes` | $14,388,050,000 contra $348,500,000 reales |
 | `financials` (Q5) | tabla colgada de un join sin relación de grano real; cada casa duplicada una vez por año fiscal | conteo 102/104 contra 51/52 reales |
 
-La lección que hay que traer al etiquetado: **el fan-out no depende de que la
-columna inflada sea `budget_usd`.** Cualquier tabla colgada de un join sin
-relación de grano real multiplica todo lo que esté del otro lado.
+**El fan-out no depende de que la columna inflada sea `budget_usd`.** Cualquier tabla
+colgada de un join sin relación de grano real multiplica todo lo que esté del otro
+lado.
 
-## Los veredictos
+---
 
-### `no_rows`
+## Las cuatro etiquetas
 
-La query devolvió **0 filas**. El multiplicador es **indefinido (0/0), no 1.0**.
+| Etiqueta | Cuándo |
+|---|---|
+| `shape_present` | Hay join **más** agregado tal que la duplicación **PODRÍA** inflar un número. No afirma que pase, solo que la estructura lo permite. |
+| `shape_absent` | La estructura no lo permite: sin join, o agregado inmune, o el CTE pre-agrega bien. |
+| `out_of_scope` | Self join, window function, `UNION`/`INTERSECT`/`EXCEPT`, join que no sigue una FK declarada, o columna ambigua. |
+| `unsure` | No se puede decidir desde el SQL. **Respuesta válida, no un fracaso.** |
 
-**Nunca se reporta `shape_no_inflation` sobre una query sin filas.** "Estaba rota
-por otra razón" y "no hubo inflación" son hechos distintos y no se colapsan. Una
-query que no devuelve nada no es evidencia de que la detección funcionó; es
-evidencia de que no hubo nada que medir. Colapsar los dos casos convertiría una
-entrada sin información en un acierto del detector.
+### Por qué estas cuatro y no los veredictos del detector
 
-En el corpus actual son **2 de 49**: ids 19 y 24, ambos de `ddl_only`, Q4 corrida 4
-y Q5 corrida 4. El dato sale de `result.row_count` en los JSON de corridas.
+El detector emite cinco veredictos —`inflated`, `shape_no_inflation`,
+`no_contributing_rows`, `clean`, `not_analyzed`— y **ninguno coincide con estas
+cuatro etiquetas. Cero tokens compartidos, a propósito.**
 
-### `shape_no_inflation`
+Tres de esos cinco **no son determinables desde el SQL**: `inflated` y
+`shape_no_inflation` exigen el multiplicador medido, y `no_contributing_rows` exige
+`COUNT(T.rowid)` sobre la base. Tú estás etiquetando a ciegas, sin correr nada.
 
-Nombrado, **no definido todavía.** Ver el hueco abajo.
+Los casos A2 y B1 del set adversario son la demostración: SQL casi idéntico,
+veredictos distintos, y **lo único que los separa es el multiplicador medido.** Si
+etiquetaras `inflated` adivinando la cardinalidad, la etiqueta dejaría de ser
+independiente de lo que el detector va a medir, y comparar detector contra etiqueta
+ya no significaría nada.
 
-### Los otros tres
+Los nombres no se comparten para que nadie compare etiqueta contra veredicto con
+`==` y parezca que funciona. **La adjudicación entre los dos vocabularios está
+pre-registrada en `docs/ROADMAP.md`, escrita antes de que existiera una sola
+etiqueta.**
 
-**No especificados.** El diseño habla de cinco veredictos; en este repo solo están
-`no_rows` (definido arriba) y `shape_no_inflation` (solo el nombre). Los otros tres
-no se inventan aquí.
+---
 
-Consecuencia práctica: **el etiquetado no puede empezar todavía.** No es un
-bloqueo real porque las worksheets se movieron a la etapa 1b de todos modos, pero
-el vocabulario completo tiene que existir antes de generarlas.
+## Reglas que no dependen de juicio
+
+- Cualquier agregado con `DISTINCT` es **inmune**. También `MAX` y `MIN`. Medido:
+  duplicar filas no movió ninguno de los tres.
+- Sensibles a duplicación: `SUM`, `AVG`, `COUNT` sin DISTINCT, `TOTAL`.
+- Una query **sin agregados** no tiene forma: va `shape_absent`.
+- `shape_present` exige **las dos cosas juntas**: la estructura de joins **y** un
+  agregado sensible sobre una columna afectada. La estructura sola no basta.
+- Un CTE que pre-agrega a **una fila por llave** no duplica. Uno que no pre-agrega,
+  sí.
+
+## Los campos de cada bloque
+
+```
+LABEL:        una de las cuatro. Obligatoria.
+SHAPE:        opcional, solo para shape_present.
+RECONOCIDA:   `si` o vacía.
+NOTA:         texto libre.
+```
+
+**`SHAPE:` es opcional y déjala vacía sin culpa.** Nombrar `fan_trap` contra
+`chasm_trap` es un segundo juicio que puede fallar independiente del primero, y el
+primario es el binario. Los valores son `fan_trap` (se agrega una columna del lado
+"uno" tras unir al "muchos"), `chasm_trap` (dos ramas uno-a-muchos desde un ancestro
+común, unidas entre sí, **y las ramas pueden tener más de un salto**) y `unexplained`
+(hay estructura duplicadora pero no encaja limpio en ninguna).
+
+**`RECONOCIDA: si`** si reconoces la query de nuestras conversaciones. No descarta el
+caso: se reporta aparte, porque el ciego sobre esa entrada ya no vale, y eso es un
+dato sobre la etiqueta y no un defecto de ella.
+
+Valida con:
+
+```
+uv run python evals/gold/validate_labels.py evals/gold/worksheet_dev.md
+```
+
+Reporta y no arregla nada. Cualquier línea con forma `PALABRA:` que no reconozca la
+señala: un `RECONOCIDO:` mal tecleado tiene que ser visible.
+
+---
 
 ## Reglas de procedimiento
 
-1. **Ciego.** El etiquetador no ve la config que produjo el SQL. Si la ve, el
-   etiquetado deja de ser una medición independiente de la variable que la
-   rebanada 2 estaba probando.
-2. **Los criterios se escriben antes de las etiquetas, y las etiquetas antes del
-   detector.** Los tres archivos se commitean en ese orden.
-3. **Una vez commiteadas, las etiquetas no se editan.** Si un criterio cambia, es
-   un archivo nuevo. Aplica el protocolo de archivos congelados de
-   `docs/ROADMAP.md`: una corrección va como nota fechada al inicio, nunca como
-   reescritura silenciosa.
-4. **La procedencia no se pierde.** Cada entrada del corpus trae `sources[]` con
-   archivo, config, pregunta y número de corrida, así que cualquier etiqueta se
-   puede rastrear a la llamada que la produjo.
-5. **Un desacuerdo se registra, no se promedia.** Si dos etiquetadores discrepan,
-   las dos etiquetas quedan y la discrepancia es el dato.
+1. **Ciego.** El etiquetador no ve la config que produjo el SQL, ni la pregunta, ni
+   el resultado ejecutado, ni el `row_count`, ni el id del corpus.
 
-## Lo que este archivo no decide
-
-- El formato de la worksheet: columnas, y qué campos se le ocultan al etiquetador
-  más allá de la config.
-- El alcance de v1 del detector.
-- Los nombres y definiciones de tres de los cinco veredictos.
+   **El ciego es parcial y depende de disciplina.** Los literales delatan la config a
+   quien conozca el proyecto: `'Lennar'` solo existe en una y `'Lennar Corporation'`
+   solo en la otra. Y `worksheet_keymap.json` lo deshace con un `cat`. Si alguna vez
+   se abre, **se dice en voz alta y se marca el ciego como quemado**: uno roto y
+   reportado sigue siendo evidencia de algo, uno roto en silencio no.
+2. **Criterios, luego etiquetas, luego detector.** En ese orden y en commits
+   separados. El orden de los commits es la evidencia de que no se etiquetó mirando
+   el output.
+3. **Una vez commiteadas, las etiquetas no se editan.** Ahí sí aplica el congelado en
+   su forma dura: son mediciones. Una corrección va como nota fechada, nunca como
+   reescritura.
+4. **`fanout_labels_holdout.md` es intocable hasta la etapa 4.** No se abre, no se
+   consulta, no se usa para nada mientras se construye el detector.
+5. **La procedencia no se pierde.** Cada entrada del corpus trae `sources[]` con
+   archivo, config, pregunta y número de corrida.
+6. **Un desacuerdo se registra, no se promedia.** Si dos etiquetadores discrepan, las
+   dos etiquetas quedan y la discrepancia es el dato.

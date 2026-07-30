@@ -781,6 +781,62 @@ Y hay una segunda razón para no publicar porcentajes que es independiente del N
 **duplicación semántica del corpus sigue sin medir**, así que las 49 entradas no son
 49 observaciones independientes.
 
+### El congelado empieza en el primer uso, no en el primer commit
+
+Precisión al protocolo de archivos congelados, del 29 de julio de 2026. Es más
+general que el caso que la produjo.
+
+**La regla de congelado protege MEDICIONES.** Un archivo de resultados es intocable
+porque sobrescribirlo destruye la comparación que hace que el resultado signifique
+algo. Ése es el daño concreto que la regla previene.
+
+**Un artefacto que nunca produjo una medición no tiene nada que proteger.** Si un
+criterio, una plantilla o un esquema se commitea y después se corrige **antes de que
+alguien lo use para medir**, se reescribe en su lugar. Nada se destruye: git guarda
+la versión vieja, y no hay ninguna medición cuya interpretación dependa del texto
+anterior.
+
+El caso que lo produjo: `LABELING_CRITERIA.md` se commiteó en `e111d8f` y quedó
+rancio en cuatro puntos. Tratarlo como congelado habría dejado un documento con
+cuatro frases muertas más cuatro notas de corrección, **para que alguien lo lea de
+corrido durante una hora de trabajo de etiquetado.** Eso es peor documento y no
+protege nada.
+
+En cambio, **en cuanto haya una etiqueta escrita, el congelado aplica en su forma
+dura**, porque a partir de ahí sí hay una medición cuya interpretación depende del
+texto.
+
+### Regla de adjudicación: etiqueta humana contra veredicto del detector
+
+**Pre-registrada el 29 de julio de 2026, antes de que exista una sola etiqueta.** Ese
+es el punto: escrita antes de ver un dato para que ninguna línea pueda ser un rescate
+post hoc.
+
+Los dos vocabularios **no comparten ni un token**, así que la comparación nunca puede
+hacerse con `==` y hay que pasar por esta tabla a propósito.
+
+| Etiqueta humana | Veredicto del detector | Resultado |
+|---|---|---|
+| `shape_present` | `inflated` / `shape_no_inflation` / `no_contributing_rows` | **acuerdo** |
+| `shape_present` | `clean` | **miss del detector** |
+| `shape_absent` | `clean` | **acuerdo** |
+| `shape_absent` | `inflated` con forma nombrada | **falso positivo** |
+| `shape_absent` | `inflated`, `unexplained`, multiplicador > 1 | **el detector vio algo que yo no. NO es falso positivo** |
+| `shape_absent` | `inflated`, `unexplained`, multiplicador = 1.0 | **falso positivo, sin excepción** |
+| `out_of_scope` | `not_analyzed` | **acuerdo** |
+| `unsure` | cualquiera | **fuera del conteo, reportado aparte** |
+
+**La quinta línea es la única que perdona, y la perdona una medición, no un juicio.**
+Un multiplicador medido mayor a 1 es un hecho sobre la base: si el detector encontró
+duplicación real donde el humano no vio la estructura, el humano se equivocó. La
+sexta línea es la contraparte que impide que esa clemencia se vuelva un comodín: sin
+duplicación medida, `unexplained` no compra nada.
+
+Combinaciones que **esta tabla no cubre** y que habrá que resolver cuando aparezcan:
+`shape_present` con `not_analyzed`, `shape_absent` con `shape_no_inflation` o con
+`no_contributing_rows`, y `out_of_scope` contra cualquier veredicto que no sea
+`not_analyzed`. Quedan anotadas como huecos en lugar de improvisarse al momento.
+
 ### El ciego y el holdout dependen de disciplina, no de mecanismo
 
 Hay que decirlo en voz alta porque es fácil confundir "está protegido" con "está
