@@ -201,14 +201,45 @@ tener razón como para no estrangularlas de entrada.
 | Etapa | Qué | Estado |
 |---|---|---|
 | 1 | Corpus congelado, pin de sqlglot, criterios de etiquetado | **CERRADA** (`8e140b4`, `e111d8f`) |
-| 1b | Set adversario escrito a mano, worksheets ciegas de la unión, validador | **Siguiente** |
-| 2 | Iker etiqueta a mano, solo la mitad dev | |
+| 1b | Set adversario escrito a mano, worksheets ciegas de la unión, validador | **CERRADA** (`6712d32`, `e2ba6c2`) |
+| 2 | Iker etiqueta a mano, solo la mitad dev | **SALTADA.** Ver la nota de abajo |
 | 3 | Detector construido y corrido contra dev | |
 | 4 | Se abre el holdout, una sola vez | |
 
 El invariante que no se negocia: **worksheets y etiquetas se commitean antes de que
 exista una sola línea del detector.** El orden de los commits es la evidencia de
 que no se etiquetó mirando el output.
+
+> **Nota 2026-07-30: el detector se escribió ANTES de que existieran las etiquetas.
+> El invariante de arriba queda QUEMADO, y se reporta en lugar de silenciarse.**
+>
+> Al abrir la etapa 3, `worksheet_dev.md` tenía sus 25 líneas `LABEL:` vacías y no
+> existía ningún commit de etiquetas: **la etapa 2 no ocurrió.** Se decidió construir
+> el detector de todos modos, a sabiendas.
+>
+> **Qué se pierde, exactamente.** El orden de los commits era la evidencia de que no
+> se etiquetó mirando el output del detector. A partir del primer commit de la etapa 3
+> esa evidencia ya no se puede reconstruir: cualquier etiqueta futura se escribe con el
+> detector ya en el árbol, y **nada en el repo puede probar que su output no estuvo
+> disponible.**
+>
+> **Qué sobrevive.** Las worksheets vacías siguen congeladas en `e2ba6c2`, así que el
+> diff del commit de etiquetas seguirá mostrando exactamente lo que se agregó contra el
+> papel en blanco. Y `make_worksheets_20260729.py` sigue negándose —exit 2— a regenerar
+> una worksheet que ya tenga etiquetas. Lo que se rompió es la prueba, no
+> necesariamente el hecho.
+>
+> **Consecuencia dura para la etapa 4.** El holdout ya solo puede cachar overfitting
+> grueso del detector contra el corpus; **no** puede seguir sosteniendo la afirmación
+> "las etiquetas son independientes del detector", porque esa afirmación descansaba en
+> el orden y el orden se rompió aquí. Cualquier conteo de acuerdo que se publique
+> después lleva esta nota pegada.
+>
+> Se anota por la misma razón que el ciego y el holdout: **uno roto y reportado sigue
+> siendo evidencia de algo; uno roto en silencio no.**
+>
+> **El holdout NO se tocó.** Nada que haga match con `evals/gold/*holdout*` se leyó ni
+> se abrió durante la etapa 3. Esa regla sigue intacta.
 
 ### El diseño del detector
 
