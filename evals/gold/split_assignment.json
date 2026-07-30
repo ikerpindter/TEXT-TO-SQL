@@ -1,0 +1,230 @@
+{
+  "generated": "2026-07-30",
+  "seed": 20260729,
+  "corpus": "corpus_sql.json",
+  "strata_definition": [
+    "is_no_rows: row_count del OUTPUT igual a 0 en todas las corridas de la entrada. NO es 'fuente de filas vacia'. Ver el docstring del script.",
+    "has_cte: el arbol contiene al menos un nodo CTE.",
+    "has_left_join: al menos un JOIN con side LEFT, RIGHT o FULL en el scope de mas afuera. Es un PISO: no busca joins anidados dentro de CTEs ni subconsultas."
+  ],
+  "method": "Dentro de cada estrato, orden por id, shuffle con la seed, y luego alternar dev y holdout empezando por dev. Los estratos se recorren en orden de la tupla para que la seed baste.",
+  "adversarial_set": {
+    "file": "corpus_sql_adversarial.json",
+    "split": "dev",
+    "note": "No se parte. Son unit tests con respuesta declarada, no una muestra. No entran a la estimacion de desempeno de nadie."
+  },
+  "holdout_puede": "Cachar overfitting grueso: si el comportamiento cambia fuerte entre la mitad usada para construir y la que no, eso se ve.",
+  "holdout_no_puede": "Producir una tasa publicable. Son 49 entradas, mitades de 25 y 24, con tasa de positivos desconocida. Precision y recall se reportan EN CONTEOS, nunca en porcentajes, hasta que exista el gold set de la rebanada 4. Segunda razon, independiente del N: la duplicacion semantica del corpus sigue sin medir, asi que las 49 entradas no son 49 observaciones independientes.",
+  "limitacion": "has_left_join es un conteo sintactico del scope de mas afuera y puede ser un piso, asi que algunas entradas pueden estar mal estratificadas. Estratos imperfectos siguen ganandole a un split aleatorio con N chica, pero la imperfeccion se anota.",
+  "counts": {
+    "total": 49,
+    "dev": 25,
+    "holdout": 24,
+    "strata": 5
+  },
+  "strata": [
+    {
+      "is_no_rows": false,
+      "has_cte": false,
+      "has_left_join": false,
+      "n": 32,
+      "dev": [
+        2,
+        3,
+        6,
+        10,
+        12,
+        13,
+        14,
+        15,
+        22,
+        23,
+        27,
+        29,
+        31,
+        32,
+        33,
+        34
+      ],
+      "holdout": [
+        1,
+        4,
+        5,
+        7,
+        8,
+        9,
+        11,
+        21,
+        25,
+        26,
+        30,
+        35,
+        37,
+        39,
+        44,
+        46
+      ]
+    },
+    {
+      "is_no_rows": false,
+      "has_cte": false,
+      "has_left_join": true,
+      "n": 9,
+      "dev": [
+        18,
+        20,
+        40,
+        41,
+        49
+      ],
+      "holdout": [
+        17,
+        42,
+        43,
+        48
+      ]
+    },
+    {
+      "is_no_rows": false,
+      "has_cte": true,
+      "has_left_join": false,
+      "n": 4,
+      "dev": [
+        28,
+        38
+      ],
+      "holdout": [
+        36,
+        45
+      ]
+    },
+    {
+      "is_no_rows": false,
+      "has_cte": true,
+      "has_left_join": true,
+      "n": 2,
+      "dev": [
+        16
+      ],
+      "holdout": [
+        47
+      ]
+    },
+    {
+      "is_no_rows": true,
+      "has_cte": false,
+      "has_left_join": true,
+      "n": 2,
+      "dev": [
+        24
+      ],
+      "holdout": [
+        19
+      ]
+    }
+  ],
+  "dev": [
+    2,
+    3,
+    6,
+    10,
+    12,
+    13,
+    14,
+    15,
+    16,
+    18,
+    20,
+    22,
+    23,
+    24,
+    27,
+    28,
+    29,
+    31,
+    32,
+    33,
+    34,
+    38,
+    40,
+    41,
+    49
+  ],
+  "holdout": [
+    1,
+    4,
+    5,
+    7,
+    8,
+    9,
+    11,
+    17,
+    19,
+    21,
+    25,
+    26,
+    30,
+    35,
+    36,
+    37,
+    39,
+    42,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48
+  ],
+  "assignment": {
+    "1": "holdout",
+    "2": "dev",
+    "3": "dev",
+    "4": "holdout",
+    "5": "holdout",
+    "6": "dev",
+    "7": "holdout",
+    "8": "holdout",
+    "9": "holdout",
+    "10": "dev",
+    "11": "holdout",
+    "12": "dev",
+    "13": "dev",
+    "14": "dev",
+    "15": "dev",
+    "16": "dev",
+    "17": "holdout",
+    "18": "dev",
+    "19": "holdout",
+    "20": "dev",
+    "21": "holdout",
+    "22": "dev",
+    "23": "dev",
+    "24": "dev",
+    "25": "holdout",
+    "26": "holdout",
+    "27": "dev",
+    "28": "dev",
+    "29": "dev",
+    "30": "holdout",
+    "31": "dev",
+    "32": "dev",
+    "33": "dev",
+    "34": "dev",
+    "35": "holdout",
+    "36": "holdout",
+    "37": "holdout",
+    "38": "dev",
+    "39": "holdout",
+    "40": "dev",
+    "41": "dev",
+    "42": "holdout",
+    "43": "holdout",
+    "44": "holdout",
+    "45": "holdout",
+    "46": "holdout",
+    "47": "holdout",
+    "48": "holdout",
+    "49": "dev"
+  }
+}

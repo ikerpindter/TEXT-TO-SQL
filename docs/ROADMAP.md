@@ -174,19 +174,63 @@ y el primero que aplica gana.
 | Orden | Veredicto | Cuándo |
 |---|---|---|
 | 1 | `not_analyzed` | El detector no pudo analizar la query. Siempre con `reason`. |
-| 2 | `no_rows` | La fuente de filas devuelve 0. El multiplicador es indefinido. |
+| 2 | `no_contributing_rows` | `COUNT(T.rowid) = 0`. El multiplicador es indefinido. |
 | 3 | `clean` | Analizada, sin forma de fan-out presente. |
 | 4 | `shape_no_inflation` | La forma está presente, el multiplicador medido es 1.0. |
 | 5 | `inflated` | La forma está presente y el multiplicador medido es mayor a 1.0. |
 
+> **Corrección 2026-07-29: `no_rows` se renombra a `no_contributing_rows`, y el
+> veredicto conserva sus `findings`.**
+>
+> El nombre viejo describía dos casos y mentía sobre diecisiete. Medido: **19 de 43
+> entradas medibles tienen la fuente de filas vacía, y solo 2 devuelven 0 filas al
+> usuario.** Las otras 17 **sí devuelven filas** —un agregado desnudo sobre cero
+> filas emite exactamente una fila, con un `0` o un `NULL` adentro— así que
+> llamarlas "sin filas" es falso desde el punto de vista de quien lee el resultado.
+>
+> Tres cambios que vienen con el renombre:
+>
+> 1. **`findings` va poblado.** La especificación solo dice que `findings` va vacío
+>    en `clean` y en `not_analyzed`, así que un `no_contributing_rows` lleva su forma
+>    detectada estáticamente con `row_multiplier: null`. Sin esto el guardrail se
+>    quedaría callado en el 44% del corpus, incluidas las entradas de Q4 con el
+>    fan-out de `budget_usd`.
+> 2. **Campo `subcase`** que separa los dos: `query_sin_filas` contra
+>    `query_con_filas` con `T` vacía.
+> 3. **La precedencia pasa a ser POR HALLAZGO, no por query.** Si un hallazgo es
+>    medible y otro no, el veredicto sale del medible. `no_contributing_rows` solo
+>    gana cuando **ninguno** lo es.
+
 - **`not_analyzed` va primero a propósito.** Si no podemos analizar, lo decimos y
   paramos. No se degrada a `clean`, que afirmaría algo que no verificamos.
-- **`no_rows` va antes que `clean`** porque el multiplicador no se puede calcular
-  sobre cero filas. "Estaba rota por otra razón" y "no hubo inflación" son hechos
-  distintos y no se colapsan. Nunca se reporta `shape_no_inflation` sobre una query
-  sin filas.
+- **`no_contributing_rows` va antes que `clean`** porque el multiplicador no se puede
+  calcular sobre cero filas. "Estaba rota por otra razón" y "no hubo inflación" son
+  hechos distintos y no se colapsan. Nunca se reporta `shape_no_inflation` sobre una
+  query cuya `T` no aporta filas.
 - Si hay varios hallazgos en la misma query, **el veredicto es el peor caso.** Un
   solo hallazgo `inflated` hace que la query sea `inflated`.
+
+> **`clean` significa "sin duplicación medida", NO "la query es correcta".**
+>
+> Este guardrail mide **una sola cosa**: duplicación de filas por joins. Las trampas
+> de `unit_scale` y de año fiscal producen números mal **con veredicto `clean`**, y
+> eso es el comportamiento correcto, no un hoyo.
+>
+> Importa sobre todo para la **rebanada 6**, donde esto lo consume un agente: un
+> agente que lea `clean` como "confía en el número" va a confiar en números que este
+> detector nunca miró. El campo dice qué se midió, no que el resultado sea bueno.
+
+> **La pasada estática de forma corre SIEMPRE, aunque la dinámica no encuentre nada.**
+>
+> Es lo único que hace emitible a `shape_no_inflation`. Si el hallazgo solo se creara
+> cuando `row_multiplier > 1`, ese veredicto sería **inemitible por construcción** y
+> los casos con forma presente y multiplicador 1.0 colapsarían a `clean`.
+>
+> Verificado el 2026-07-29 sobre el par A2 / B1: la estructura de joins es idéntica
+> salvo un predicado extra en el `ON`, y el multiplicador cae de 2.0 a 1.0 **solo por
+> la cardinalidad de los datos**. La forma es una propiedad estática del árbol; el
+> multiplicador es una medición sobre la base. Son dos pasadas y la primera no puede
+> depender de la segunda.
 - **"Forma presente" significa las dos cosas juntas:** la estructura de joins **y**
   un agregado sensible a duplicación sobre una columna afectada. Una query sin
   agregados no tiene forma, va `clean`.
@@ -253,7 +297,7 @@ Resolución de la corrección de arriba. Definido el 29 de julio de 2026 en
 
 | Campo | Fórmula | Cuándo existe |
 |---|---|---|
-| `row_multiplier` | `COUNT(T.pk) / COUNT(DISTINCT T.pk)` | **Siempre calculable.** Es el factor de duplicación de **filas** |
+| `row_multiplier` | `COUNT(T.rowid) / COUNT(DISTINCT T.rowid)` | Es el factor de duplicación de **filas**. Calculable solo si `T` es tabla base |
 | `value_inflation` | `reported_value / deduplicated_value` | **Solo** en el caso angosto donde `deduplicated_value` existe. `null` en cualquier otro caso |
 
 **`value_inflation` no se aproxima nunca con `row_multiplier`.** Medido: dividir por
@@ -294,6 +338,83 @@ El veredicto no se renombra, pero **el render para `AVG` dice "distorsionado", n
 Medido el 2026-07-29 sobre `AVG(c.budget_usd)` con el join a `homes`: el promedio
 **bajó**, de 37,162,500 a 37,100,377.83. La dirección no es teórica, en esta base va
 para abajo.
+
+#### Corrección: tercera versión de la fórmula, `rowid` en vez de PK
+
+`COUNT(*)` → `COUNT(T.pk)` → **`COUNT(T.rowid)`**.
+
+> **Corrección 2026-07-29.** `COUNT(DISTINCT T.pk)` **es inexpresable en SQLite
+> cuando la PK es compuesta**, y `financials` la tiene: `(company_id, fiscal_year)`.
+>
+> ```
+> SELECT COUNT(DISTINCT company_id, fiscal_year) FROM financials
+>   -> OperationalError: wrong number of arguments to function COUNT()
+> ```
+>
+> No da un número raro: **no compila.** Y no es hipotético: **5 de las 49 entradas
+> agregan una columna de `financials`** (ids 1, 4, 24, 26, 47), o sea el 10% del
+> corpus.
+>
+> **La PK era un proxy de identidad de fila, y era el proxy equivocado.** `rowid` es
+> la identidad de fila directamente. Verificado: en las tres tablas de PK simple
+> `rowid` **es** la columna `id`, con cero discrepancias, así que el cambio no altera
+> ningún número ya medido. Sobre `financials` la fórmula nueva da
+> `COUNT(T.rowid)=40 / COUNT(DISTINCT T.rowid)=4` = **10.0**.
+>
+> **Las dos correcciones de esta fórmula salieron de medición, no de razonamiento.**
+> La primera apareció al pensar en `LEFT JOIN`; la segunda apareció al leer
+> `PRAGMA table_info`. Ninguna se habría encontrado releyendo la especificación.
+
+**Tres guards obligatorios antes de usar `rowid`:**
+
+1. **`T` tiene que ser tabla base.** Si no lo es, `not_analyzed` con razón. **Y hay
+   que verificarlo en el AST**, porque SQLite no ayuda:
+
+   | `T` es… | `T.rowid` | |
+   |---|---|---|
+   | tabla base | funciona | correcto |
+   | CTE | `OperationalError: no such column` | falla **ruidoso**, bien |
+   | subconsulta derivada | **resuelve y devuelve `NULL` en cada fila** | falla **silencioso** |
+
+   Medido sobre un derivado de 20 filas: `COUNT(t.rowid) = 0`. Eso es exactamente la
+   condición de `no_contributing_rows`, así que una derivada quedaría **clasificada
+   silenciosamente** como "T no aporta filas" teniendo filas. Probado con derivada
+   simple, con `DISTINCT`, con `GROUP BY`, con `LIMIT` y con `UNION`: **las cinco
+   devuelven NULL sin error.**
+
+   **El guard, confirmado por medición:** `isinstance(scope.sources[nombre], exp.Table)`.
+2. **`WITHOUT ROWID` va a `not_analyzed`, ruidoso.** Medido: cero tablas
+   `WITHOUT ROWID` en esta base, así que este guard **no tiene blanco hoy**.
+3. **Ninguna columna puede llamarse `rowid`, `oid` ni `_rowid_`**, o lo sombrea.
+   Medido: cero columnas así en las cuatro tablas.
+
+#### La brecha entre los dos campos cambia de signo
+
+| Caso | `row_multiplier` | `value_inflation` | El multiplicador queda… |
+|---|---|---|---|
+| Q4, config B | 40.0 | 41.285653 | **por debajo** |
+| A6, el gemelo de C2 | 39.7 | 39.6336 | **por encima** |
+
+**No es cota superior ni inferior. Queda prohibido en el render cualquier "al menos
+Nx" o "a lo mucho Nx".** El multiplicador de filas no acota el error del valor en
+ninguna dirección: la relación depende de cómo correlacionen los valores de la
+columna agregada con el grado de fan-out de cada fila, y esa correlación puede ir
+para cualquier lado.
+
+Ojo con el segundo caso: 39.7 contra 39.6336 son 0.17% de diferencia. **Que la brecha
+sea chica es lo que la hace peligrosa**, porque invita a tratarlos como el mismo
+número. En Q4 la brecha era 3.2% y saltaba a la vista.
+
+#### Trampas de implementación medidas, para la etapa 3
+
+- **`scope.sources` trae el alias Y el nombre del CTE como entradas separadas.**
+  Medido sobre C2: `['c', 'p', 'per_comm']` son **3 entradas para 2 fuentes**.
+  Recorrer `sources` sin deduplicar sondea el CTE dos veces.
+- **La llave del `FROM` en `Select.args` es `from_`, con guion bajo.**
+  `args.get("from")` devuelve `None` **en silencio**. El acceso canónico es
+  `select.find(sqlglot.exp.From)`.
+- **La raíz del árbol de un `UNION` es `exp.Union`, no `exp.Select`.** Un detector
+  que asuma `Select` en la raíz falla antes de decidir nada.
 
 #### Las dos formas
 
@@ -622,6 +743,57 @@ porcentajes**, hasta que exista el gold set grande de la rebanada 4.
 Y hay una segunda razón para no publicar porcentajes que es independiente del N: la
 **duplicación semántica del corpus sigue sin medir**, así que las 49 entradas no son
 49 observaciones independientes.
+
+### Regla: todo conteo lleva su denominador
+
+**Un numerador sin denominador no es una medición.**
+
+Va dos veces con el mismo patrón, y las dos las cachó la revisión y no quien
+midió: los "99 pares" del lote de verificación y las "422 columnas" del cierre de
+huecos. En los dos casos el numerador se reportó solo, y en los dos casos el
+denominador resultó ser menor que el universo.
+
+Los denominadores vigentes de este corpus, definidos:
+
+| N | Qué es | Qué queda fuera |
+|---|---|---|
+| **49** | Entradas distintas en `corpus_sql.json`. El universo. | nada |
+| **43** | De esas, las que permiten reconstruir la fuente de filas y ejecutar `COUNT(*)` | **6**: ids 16, 28, 36, 38, 45, 47, las seis con CTE |
+| **42** | De esas 43, las que además tienen ≥1 tabla base referenciable por alias | **7**: las 6 con CTE **+ id 17**, por alias de subconsulta no visible en el scope de más afuera |
+
+El delta entre 43 y 42 es **exactamente la id 17**. Y un dato contraintuitivo: **con
+la fórmula de `rowid` el denominador sigue siendo 42**, no 43. Yo esperaba que
+subiera al desaparecer el filtro de "PK de una columna", y no sube: el problema de
+la id 17 es de visibilidad de alias, no de aridad de la PK.
+
+### La clase de los 17: un modo de falla que no tiene guardrail
+
+Medido el 29 de julio de 2026. **17 entradas del corpus tienen la fuente de filas
+vacía y aun así devuelven una fila al usuario.**
+
+El mecanismo, probado directo:
+
+```
+SELECT COUNT(*) FROM homes WHERE status='Sold'           -> 1 fila, valor (0,)
+SELECT community_id, COUNT(*) ... GROUP BY community_id  -> 0 filas
+```
+
+**Un agregado desnudo sobre cero filas emite exactamente una fila con un `0` o un
+`NULL` adentro.** Las dos únicas entradas del corpus con `row_count = 0` son
+precisamente las dos que llevan `GROUP BY`.
+
+La query contesta, `T` no aporta nada, el agregado sale `0` o `NULL`, **y el usuario
+ve un número.** Es una falla silenciosa de la misma familia que el fan-out: el
+resultado se ve como una respuesta y no lo es.
+
+**Candidato a su propio guardrail en una rebanada posterior. No se construye nada
+para ellos ahora.** La rebanada 3 es detección de fan-out y meter esto sería
+exactamente el tipo de crecimiento por inercia que el alcance prohíbe. Queda
+anotado como hallazgo, con su medición, para que exista cuando toque.
+
+Efecto lateral que sí importa ya: **`row_count = 0` es un proxy pésimo de "no
+matcheó nada"**, y cualquier conteo de la rebanada 4 que lo use va a subestimar el
+fenómeno por un factor grande.
 
 ### Lote de verificación del corpus: decisiones pre-registradas
 

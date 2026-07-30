@@ -1,0 +1,273 @@
+{
+  "generated": "2026-07-29",
+  "source": "docs/rebanada-3-addendum-01.md seccion 3, mas D2 y A6 acordados despues",
+  "db_sha256": "c710b6354d57bc0e74feb9d4233bb77e902ae4ff6f49b85960a6eef15684d762",
+  "split": "dev",
+  "split_rationale": "El set adversario NO se parte. Va entero a dev. Son unit tests con respuesta declarada, no una muestra, y no entran a la estimacion de desempeno de nadie. Mezclarlos con el corpus real produciria una precision y un recall que no describen ninguna de las dos poblaciones.",
+  "never_in_worksheets": "Estos casos NO se etiquetan a ciegas. Traen su respuesta declarada por diseno y viven en su propio archivo.",
+  "limitacion": "Las respuestas esperadas se escribieron razonando sobre la especificacion. Si el razonamiento esta mal, el test codifica el error. Por eso cada caso lleva su rationale, y los que dependen de los datos llevan precondition medida.",
+  "precondition_contract": "El runner evalua la precondicion ANTES del veredicto y truena ruidoso si no se cumple. Un caso que no puede discriminar tiene que FALLAR, no pasar. Esta regla existe porque el C1 original pasaba verde midiendo nada.",
+  "verdicts": [
+    "not_analyzed",
+    "no_contributing_rows",
+    "clean",
+    "shape_no_inflation",
+    "inflated"
+  ],
+  "case_count": 21,
+  "case_count_note": "El addendum decia 19 y el mensaje de cierre decia 20. Son 21: los 19 originales, mas D2 y A6 acordados despues. La discrepancia se anota en lugar de resolverse borrando un caso.",
+  "cases": [
+    {
+      "id": "A1",
+      "sql": "SELECT SUM(c.budget_usd) FROM communities c JOIN homes h ON h.community_id = c.id",
+      "expected_verdict": "inflated",
+      "expected_shape": "fan_trap",
+      "reason_tag": null,
+      "precondition": {
+        "description": "row_multiplier de T=communities mayor a 1.0",
+        "metric": "row_multiplier",
+        "target_table": "communities",
+        "op": "==",
+        "value": 39.7,
+        "measured_20260729": 39.7
+      },
+      "rationale": "Fan trap clasico, la forma de Q4. budget_usd vive en el lado uno y se suma una vez por casa. Cae en el caso angosto, asi que deduplicated_value si se calcula."
+    },
+    {
+      "id": "A2",
+      "sql": "SELECT COUNT(h.id) FROM companies co\nJOIN financials f ON f.company_id = co.id\nJOIN communities c ON c.company_id = co.id\nJOIN homes h ON h.community_id = c.id",
+      "expected_verdict": "inflated",
+      "expected_shape": "chasm_trap",
+      "reason_tag": null,
+      "precondition": {
+        "description": "row_multiplier de T=homes igual a 2.0, una fila por ano fiscal",
+        "metric": "row_multiplier",
+        "target_table": "homes",
+        "op": "==",
+        "value": 2.0,
+        "measured_20260729": 2.0
+      },
+      "rationale": "EL CASO CRITICO. Chasm trap multi-salto, la forma de Q5. Dos ramas desde companies con profundidades distintas: financials a un salto, homes a dos via communities. Un detector que solo compare hijos directos de un ancestro FALLA este caso, y es uno de los dos medidos en la rebanada 2. Como es COUNT de la PK afectada, value_inflation tambien da 2.0: es el unico agregado donde row_multiplier y value_inflation coinciden por definicion."
+    },
+    {
+      "id": "A3",
+      "sql": "SELECT AVG(c.budget_usd) FROM communities c JOIN homes h ON h.community_id = c.id",
+      "expected_verdict": "inflated",
+      "expected_shape": "fan_trap",
+      "reason_tag": null,
+      "precondition": null,
+      "rationale": "Fan trap con AVG. El promedio se vuelve ponderado por casas. El render dice distorsionado, no inflado, porque para AVG el efecto va en cualquier direccion: medido el 2026-07-29 sobre el subconjunto DHI el promedio BAJO, de 37,162,500 a 37,100,377.83. deduplicated_value va null: el caso angosto es solo SUM y COUNT."
+    },
+    {
+      "id": "A4",
+      "sql": "SELECT c.id, SUM(c.budget_usd) FROM communities c\nJOIN homes h ON h.community_id = c.id GROUP BY c.id",
+      "expected_verdict": "inflated",
+      "expected_shape": "fan_trap",
+      "reason_tag": null,
+      "precondition": {
+        "description": "row_multiplier global de T=communities mayor a 1.0",
+        "metric": "row_multiplier",
+        "target_table": "communities",
+        "op": "==",
+        "value": 39.7,
+        "measured_20260729": 39.7
+      },
+      "rationale": "Fan trap con GROUP BY. multiplier_scope debe ser global. Prueba la salvedad de GROUP BY con su redaccion corregida: el multiplicador global prueba que EXISTE duplicacion en algun lugar del resultado, no que cada grupo este afectado. Medido aparte, aqui los 20 grupos si estan afectados, pero el detector no puede afirmarlo desde el multiplicador global."
+    },
+    {
+      "id": "A5",
+      "sql": "SELECT TOTAL(c.budget_usd) FROM communities c JOIN homes h ON h.community_id = c.id",
+      "expected_verdict": "inflated",
+      "expected_shape": "fan_trap",
+      "reason_tag": null,
+      "precondition": null,
+      "rationale": "Mismo camino que SUM. Existe para que TOTAL deje de ser supuesto: es el alias de SUM en SQLite y comparte camino de codigo, pero necesita su assert. Verificado el 2026-07-29 que TOTAL y SUM dan el mismo valor sobre la fuente duplicada."
+    },
+    {
+      "id": "A6",
+      "sql": "WITH all_homes AS (SELECT community_id FROM homes)\nSELECT SUM(c.budget_usd) FROM communities c JOIN all_homes a ON a.community_id = c.id",
+      "expected_verdict": "inflated",
+      "expected_shape": "unexplained",
+      "reason_tag": null,
+      "precondition": {
+        "description": "row_multiplier de T=communities mayor a 1.0",
+        "metric": "row_multiplier",
+        "target_table": "communities",
+        "op": ">",
+        "value": 1.0,
+        "measured_20260729": 39.7
+      },
+      "rationale": "El gemelo de C2. Mismo esqueleto, unica variable el GROUP BY del CTE. Sin este caso, C2 es un test de UN SOLO LADO: un detector que simplemente no marque nada que tenga un CTE pasa C2 en verde. El par es lo que convierte la clausula 'un CTE que preagrega bien no se marca' en una prueba real. expected_shape es unexplained y NO fan_trap a proposito: trazar el linaje de all_homes.community_id hasta homes.community_id a traves del scope del CTE es maquinaria nueva y queda FUERA de v1. Si la implementacion acaba resolviendolo a fan_trap, se anota como mejora, no como el valor esperado. El CTE es artificial y no lo escribiria un modelo; el costo se acepta a cambio de aislar la variable."
+    },
+    {
+      "id": "B1",
+      "sql": "SELECT COUNT(h.id) FROM companies co\nJOIN financials f ON f.company_id = co.id AND f.fiscal_year = 2024\nJOIN communities c ON c.company_id = co.id\nJOIN homes h ON h.community_id = c.id",
+      "expected_verdict": "shape_no_inflation",
+      "expected_shape": "chasm_trap",
+      "reason_tag": null,
+      "precondition": null,
+      "rationale": "El falso positivo predicho como dominante. Identico a A2 salvo el filtro de ano fiscal. Verificado el 2026-07-29: la estructura de joins es la misma byte por byte salvo un predicado extra en el ON, y el multiplicador cae a 1.0 solo por cardinalidad, porque financials queda en una fila por compania. Un detector estatico puro marca esto como inflated; el multiplicador medido es lo unico que lo distingue de A2. DEPENDE de que la pasada estatica de forma corra INCONDICIONALMENTE: si el hallazgo solo se crea cuando row_multiplier es mayor a 1, shape_no_inflation es inemitible por construccion y este caso colapsa a clean."
+    },
+    {
+      "id": "C1",
+      "sql": "SELECT SUM(h.sale_price) FROM communities c\nLEFT JOIN homes h ON h.community_id = c.id AND h.sale_price > 750000",
+      "expected_verdict": "clean",
+      "expected_shape": null,
+      "reason_tag": null,
+      "precondition": {
+        "description": "filas con T.rowid NULL mayor a 0, si no las dos formulas coinciden y el caso es void",
+        "metric": "null_rows_t",
+        "target_table": "homes",
+        "op": ">",
+        "value": 0,
+        "measured_20260729": 18
+      },
+      "rationale": "Regression test de la formula corregida. T=homes, y las comunidades sin casas sobre 750000 producen filas con h.rowid en NULL. La formula corregida da 14/14 = 1.0 y por lo tanto clean, correcto; la formula original daria 32/14 = 2.2857 y por lo tanto inflated, falso positivo. CORRECCION 2026-07-29: el ON original era h.status = 'cancelled' y era VOID, porque las 20 comunidades tienen al menos una casa cancelada y las dos formulas daban 1.0. Se probaron 7 candidatos y ningun ON basado en categoria produce huecos en esta base; solo los umbrales de precio. El umbral es artificial y un modelo no lo escribiria: el costo se acepta a cambio de que el caso pueda discriminar."
+    },
+    {
+      "id": "C2",
+      "sql": "WITH per_comm AS (SELECT community_id, COUNT(*) AS n FROM homes GROUP BY community_id)\nSELECT SUM(c.budget_usd) FROM communities c JOIN per_comm p ON p.community_id = c.id",
+      "expected_verdict": "clean",
+      "expected_shape": null,
+      "reason_tag": null,
+      "precondition": {
+        "description": "row_multiplier de T=communities exactamente 1.0, si no C2 pasaria por la razon equivocada",
+        "metric": "row_multiplier",
+        "target_table": "communities",
+        "op": "==",
+        "value": 1.0,
+        "measured_20260729": 1.0
+      },
+      "rationale": "CTE que preagrega bien. communities no se duplica porque per_comm tiene una fila por comunidad. Prueba traverse_scope. Va SIEMPRE en par con A6: por si sola es un test de un solo lado que un detector pasa simplemente no mirando dentro del CTE."
+    },
+    {
+      "id": "C3",
+      "sql": "SELECT COUNT(DISTINCT c.id) FROM communities c JOIN homes h ON h.community_id = c.id",
+      "expected_verdict": "clean",
+      "expected_shape": null,
+      "reason_tag": null,
+      "precondition": null,
+      "rationale": "Inmune por aritmetica. Ojo con el detalle que lo hace util: el row_multiplier de esta fuente SI es 39.7, o sea que hay duplicacion real. Lo que no hay es un agregado sensible a ella. Verifica que 'forma presente' exige las dos cosas juntas y no solo la estructura de joins."
+    },
+    {
+      "id": "C4",
+      "sql": "SELECT MAX(c.budget_usd) FROM communities c JOIN homes h ON h.community_id = c.id",
+      "expected_verdict": "clean",
+      "expected_shape": null,
+      "reason_tag": null,
+      "precondition": null,
+      "rationale": "Duplicar filas no mueve un maximo. Igual que C3, el row_multiplier es 39.7 y aun asi el veredicto es clean. Medido el 2026-07-29: MAX y MIN no se movieron bajo duplicacion, SUM, AVG y COUNT si."
+    },
+    {
+      "id": "C5",
+      "sql": "SELECT SUM(budget_usd) FROM communities",
+      "expected_verdict": "clean",
+      "expected_shape": null,
+      "reason_tag": null,
+      "precondition": null,
+      "rationale": "Sin joins no hay forma. El caso mas simple posible, existe para que el detector no invente formas donde no hay estructura."
+    },
+    {
+      "id": "C6",
+      "sql": "SELECT SUM(h.sale_price) FROM communities c JOIN homes h ON h.community_id = c.id",
+      "expected_verdict": "clean",
+      "expected_shape": null,
+      "reason_tag": null,
+      "precondition": null,
+      "rationale": "Agregado solo del lado muchos. Cada casa liga con exactamente una comunidad, asi que homes no se duplica: medido, row_multiplier de T=homes es 1.0 sobre la misma fuente donde el de communities es 39.7. Verifica que el detector evalua el multiplicador de la tabla AGREGADA y no el de cualquier tabla del join."
+    },
+    {
+      "id": "C7",
+      "sql": "SELECT c.id, h.status FROM communities c JOIN homes h ON h.community_id = c.id",
+      "expected_verdict": "clean",
+      "expected_shape": null,
+      "reason_tag": null,
+      "precondition": null,
+      "rationale": "Sin agregados no hay nada que inflar. Prueba la definicion de forma presente: una query sin agregados va clean aunque la estructura de joins duplique, y aqui duplica 39.7x."
+    },
+    {
+      "id": "D1",
+      "sql": "SELECT SUM(c.budget_usd) FROM communities c\nJOIN homes h ON h.community_id = c.id WHERE h.status = 'sold'",
+      "expected_verdict": "no_contributing_rows",
+      "expected_shape": "fan_trap",
+      "reason_tag": null,
+      "subcase": "query_con_filas",
+      "precondition": {
+        "description": "COUNT(T.rowid) igual a 0, multiplicador indefinido",
+        "metric": "count_t_rowid",
+        "target_table": "communities",
+        "op": "==",
+        "value": 0,
+        "measured_20260729": 0
+      },
+      "rationale": "Precedencia sobre shape_no_inflation. 'sold' no existe en homes.status, cuyos valores son available, backlog, cancelled, closed. La forma de fan trap esta presente y el veredicto tiene que ser no_contributing_rows: si sale shape_no_inflation, la regla de precedencia no se implemento. OJO CON EL SUBCASO: el addendum lo trataba implicitamente como 'query sin filas' y NO lo es. Medido el 2026-07-29: la fuente de filas tiene 0 filas, pero la query DEVUELVE 1 fila con un NULL adentro, porque un agregado desnudo sobre cero filas siempre emite exactamente una fila. Es el mismo subcaso que D2. Para obtener 'query sin filas' hace falta un GROUP BY, y ningun caso del set lo cubre."
+    },
+    {
+      "id": "D2",
+      "sql": "SELECT COUNT(c.id) FROM homes h\nLEFT JOIN communities c ON c.id = h.community_id AND c.state = 'ZZ'",
+      "expected_verdict": "no_contributing_rows",
+      "expected_shape": "fan_trap",
+      "reason_tag": null,
+      "subcase": "query_con_filas",
+      "precondition": {
+        "description": "la query devuelve mas de 0 filas Y COUNT(T.rowid) es 0",
+        "metric": "rows_returned_gt0_and_count_t_rowid_eq0",
+        "target_table": "communities",
+        "op": "==",
+        "value": 0,
+        "measured_20260729": {
+          "rows_returned": 1,
+          "count_t_rowid": 0,
+          "source_rows": 794,
+          "null_rows_t": 794
+        }
+      },
+      "rationale": "La clase de los 17. La query contesta, T no aporta nada, el agregado sale 0 y el usuario ve un numero como si fuera respuesta. 'ZZ' no existe en communities.state, cuyos valores son codigos de dos letras. La forma de fan trap esta presente: T=communities porque se agrega c.id, y el join va por la FK homes.community_id a communities.id, asi que communities es el lado uno y homes el muchos. Control medido: la misma query sin el filtro ZZ da row_multiplier 39.7 y COUNT(c.id) 794, o sea que la forma si infla cuando hay datos que la ejerciten."
+    },
+    {
+      "id": "E1",
+      "sql": "SELECT COUNT(*) FROM homes h1 JOIN homes h2 ON h1.community_id = h2.community_id",
+      "expected_verdict": "not_analyzed",
+      "expected_shape": null,
+      "reason_tag": "self_join",
+      "precondition": null,
+      "rationale": "Self join, fuera de v1. Ejecuta sin error y devuelve 32462, asi que el detector no puede confiar en que SQLite lo rechace: tiene que reconocerlo en el arbol."
+    },
+    {
+      "id": "E2",
+      "sql": "SELECT SUM(c.budget_usd) FROM communities c JOIN companies co ON co.name = c.state",
+      "expected_verdict": "not_analyzed",
+      "expected_shape": null,
+      "reason_tag": "non_fk_join",
+      "precondition": null,
+      "rationale": "Join sobre columnas que no son una relacion de FK declarada. Sintacticamente valido, semanticamente absurdo: sin FK no se puede determinar el lado uno. Ejecuta sin error y devuelve un NULL, otro caso donde el motor no ayuda a detectarlo."
+    },
+    {
+      "id": "E3",
+      "sql": "SELECT SUM(budget_usd) OVER (PARTITION BY company_id) FROM communities",
+      "expected_verdict": "not_analyzed",
+      "expected_shape": null,
+      "reason_tag": "window_function",
+      "precondition": null,
+      "rationale": "Window function, fuera de v1. Se detecta por el nodo exp.Window en el arbol."
+    },
+    {
+      "id": "E4",
+      "sql": "SELECT SUM(budget_usd) FROM communities WHERE company_id = 1\nUNION ALL\nSELECT SUM(budget_usd) FROM communities WHERE company_id = 2",
+      "expected_verdict": "not_analyzed",
+      "expected_shape": null,
+      "reason_tag": "set_operation",
+      "precondition": null,
+      "rationale": "Operacion de conjuntos, fuera de v1. La raiz del arbol es exp.Union, no exp.Select, asi que un detector que asuma Select en la raiz falla antes de decidir. NO VERIFICADO: si INTERSECT y EXCEPT mapean al mismo tipo de nodo. Un chequeo con find(exp.Union) podria dejar dos de las tres operaciones afuera."
+    },
+    {
+      "id": "E5",
+      "sql": "SELECT COUNT(id) FROM communities c JOIN homes h ON h.community_id = c.id",
+      "expected_verdict": "not_analyzed",
+      "expected_shape": null,
+      "reason_tag": "ambiguous_column",
+      "precondition": null,
+      "rationale": "Columna ambigua: id existe en communities y en homes. Verificado el 2026-07-29 que qualify con validate_qualify_columns=True lanza OptimizeError 'Column id could not be resolved', y que SQLite tambien la rechaza con 'ambiguous column name: id'. Prueba que el camino de excepcion llega a not_analyzed con razon, y no a una atribucion silenciosa. Es el unico caso del set que ejercita la ambiguedad: en las 49 entradas del corpus real, CERO columnas sin prefijo eran resolubles a mas de una tabla."
+    }
+  ]
+}

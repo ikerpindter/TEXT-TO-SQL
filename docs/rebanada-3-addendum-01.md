@@ -42,6 +42,59 @@ reescritas.**
 > ```
 >
 > Eso sí hace lo que C1 dice hacer. Ver el reporte de la etapa 1b.
+>
+> **Candidatos probados**, todos con `communities LEFT JOIN homes`:
+>
+> | `ON` extra | filas NULL | corregida | original | ¿discrimina? |
+> |---|---|---|---|---|
+> | `status = 'cancelled'` (el original) | **0** | 1.0 | 1.0 | **no** |
+> | `status = 'backlog'` | 0 | 1.0 | 1.0 | no |
+> | `status = 'available'` | 0 | 1.0 | 1.0 | no |
+> | `closing_date IS NULL` | 0 | 1.0 | 1.0 | no |
+> | `sale_price IS NULL` | 0 | 1.0 | 1.0 | no |
+> | **`sale_price > 750000`** | **18** | **1.0** | **2.2857** | **sí** |
+> | `sale_price > 600000` | 15 | 1.0 | 1.2419 | sí |
+>
+> **Ningún `ON` basado en categoría produce huecos en esta base:** las 20 comunidades
+> tienen al menos una casa de cada uno de los cuatro estados. Solo los umbrales de
+> precio los producen. Aplicado `sale_price > 750000`.
+
+---
+
+> **Corrección 2026-07-29: tercera versión de la fórmula del multiplicador.**
+>
+> `COUNT(*)` → `COUNT(T.pk)` → **`COUNT(T.rowid)`**.
+>
+> La sección 2 usa `COUNT(DISTINCT T.pk)`, que **es inexpresable en SQLite cuando la
+> PK es compuesta**. `financials` la tiene, `(company_id, fiscal_year)`, y
+> `COUNT(DISTINCT a, b)` no compila: `wrong number of arguments to function COUNT()`.
+> **5 de las 49 entradas del corpus agregan una columna de `financials`.**
+>
+> La PK era un proxy de identidad de fila y era el proxy equivocado. Se usa `rowid`,
+> con tres guards: `T` tiene que ser **tabla base** (verificado en el AST, porque
+> sobre una subconsulta derivada `rowid` resuelve a `NULL` **sin error**),
+> `WITHOUT ROWID` va a `not_analyzed`, y ninguna columna puede llamarse `rowid`.
+>
+> **Las dos correcciones de esta fórmula salieron de medición, no de razonamiento.**
+> La primera al pensar en `LEFT JOIN`, la segunda al leer `PRAGMA table_info`.
+> Ninguna se habría encontrado releyendo la especificación.
+
+> **Corrección 2026-07-29: `no_rows` se renombra a `no_contributing_rows`.**
+>
+> Medido: **19 de 43 entradas medibles tienen la fuente de filas vacía, y solo 2
+> devuelven 0 filas al usuario.** Las otras 17 sí devuelven filas, porque un agregado
+> desnudo sobre cero filas emite exactamente una fila con un `0` o un `NULL` adentro.
+> **El nombre viejo describía 2 casos y mentía sobre 17.**
+>
+> Con el renombre vienen tres cambios: `findings` va **poblado** con la forma
+> estática y `row_multiplier: null`; hay un campo `subcase` que separa
+> `query_sin_filas` de `query_con_filas`; y **la precedencia pasa a ser por hallazgo,
+> no por query** —`no_contributing_rows` solo gana cuando ningún hallazgo es medible.
+>
+> Consecuencia sobre el caso D1 de la sección 3: su subcase es **`query_con_filas`**,
+> no `query_sin_filas`. Medido: la fuente tiene 0 filas pero la query devuelve 1 con
+> un `NULL`. Es el mismo subcaso que D2, así que **`query_sin_filas` no tiene
+> cobertura en el set**; haría falta un caso con `GROUP BY`.
 
 ---
 
