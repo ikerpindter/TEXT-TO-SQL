@@ -1749,6 +1749,150 @@ rediseño de cómo se elige `T`, o sea exactamente el crecimiento por inercia qu
 alcance prohíbe. Queda escrito, con su medición y su denominador, para que exista
 cuando toque.
 
+## Publicación del repo
+
+**Escrito el 13 de agosto de 2026**, al publicar en
+`github.com/ikerpindter/FANOUT`. El repo se llama **FANOUT** y no
+`text-to-sql-guardrails`: mantiene la convención de RAG y AGENT, y **nombra el
+hallazgo en vez de la categoría.**
+
+### Verificación de checkout limpio
+
+Pendiente desde que se escribió el protocolo de archivos congelados: si
+`portfolio.db` está en el `.gitignore`, los archivos congelados son
+incomprobables por terceros salvo que un clon limpio reproduzca la base.
+
+Corrida el 13 de agosto de 2026, clonando en un directorio nuevo, sobre `c1937ea`:
+
+| Paso | Resultado |
+|---|---|
+| `uv lock --check` | exit 0, 20 paquetes |
+| `build_db.py` | exit 0 |
+| sha256 de `portfolio.db` | `c710b6354d57bc0e74feb9d4233bb77e902ae4ff6f49b85960a6eef15684d762` — **cuadra** |
+| `gate_adversarial.py` | exit 0, **25 de 25** |
+| `smoke_sqlglot.py` | exit 0, las 4 partes |
+
+Reproducido dos veces en clones independientes.
+
+**Y el `schema_text` guardado dentro de los `evals/runs/*.json` es idéntico al que
+produce el código hoy**, mismo sha256 y misma longitud en los dos archivos. Ésa
+era la otra mitad del pendiente y es la que hace comprobables los resultados
+congelados: cualquiera puede reconstruir la base y el prompt exactos con los que
+se midió.
+
+#### El hueco: `uv sync` contra PyPI nunca se ejercitó
+
+**Y es justo el paso que recorre alguien de fuera.**
+
+El entorno donde se hizo la verificación no tiene red: `uv sync` contra PyPI falló
+por timeout tras tres reintentos, así que la instalación se resolvió con
+`uv sync --offline` desde el caché local de uv. Todo lo que está en la tabla de
+arriba corrió sobre paquetes que **ya estaban en esta máquina**.
+
+Qué queda verificado y qué no, sin suavizar:
+
+| | |
+|---|---|
+| **Sí** | El lockfile resuelve consistente contra `pyproject.toml` (`uv lock --check` exit 0) |
+| **Sí** | Con esos 20 paquetes exactos, la base, los dos gates y el `schema_text` reproducen |
+| **No** | Que PyPI sirva hoy esos 20 paquetes con esos hashes |
+| **No** | Que un clon en una máquina sin caché llegue a correr |
+
+**No se cierra inventando el paso que falta.** Se cierra el día que alguien corra
+`uv sync` con red sobre un clon limpio, y hasta entonces la afirmación publicable
+es "reproduce desde el caché", no "reproduce desde cero".
+
+### Las dos cosas personales que se publican a propósito
+
+El escaneo de secretos sobre el árbol y sobre los 31 commits salió limpio de lo
+que importa: **cero API keys, cero llaves privadas, cero tokens, cero `.env`.** El
+único `.env` que existió alguna vez en la historia es `.env.example`, con el
+placeholder `sk-...`.
+
+Encontró dos cosas que sí identifican a una persona, y **las dos se publican como
+decisión, no por descuido:**
+
+| Qué | Dónde | Alcance |
+|---|---|---|
+| Ruta absoluta con nombre completo | campo `db_path` de los dos `evals/runs/*.json`, escrito en `54b94aa` | una ocurrencia por archivo |
+| Correo personal | autor y committer de los 31 commits | todos |
+
+**La razón es que limpiarlas exige reescribir la historia, y eso rompe evidencia
+que vale más que una ruta de carpeta.** Este documento cita **10 SHAs** como
+evidencia —`8e140b4`, `e111d8f`, `6712d32`, `e2ba6c2`, `b0de43d`, `5865127`,
+`6cf4903`— y la regla 11 dice literal que un número de gate vive en su commit. Un
+rewrite los cambia todos y deja al ROADMAP apuntando a commits que no existen.
+Además, `evals/runs/*.json` son registros congelados: editarlos rompe el
+protocolo por su cuenta.
+
+Y del otro lado el daño es chico: **el nombre no es un secreto, es la atribución
+de un proyecto de portafolio**, y coincide con el handle público. El `db_path` no
+es una credencial.
+
+Lo que sí queda anotado, porque el que viene después no tiene por qué deducirlo:
+**la decisión fue publicar, con estas dos cosas medidas y nombradas.** Si algún
+día hay que revertirla, el costo es el rewrite completo y esta sección dice por
+qué no se pagó.
+
+## Las siete fallas silenciosas, y el patrón que las une
+
+**Cerrada la séptima el 13 de agosto de 2026.** Cada una devolvía un resultado de
+aspecto correcto sin lanzar nada, y ninguna se habría encontrado releyendo el
+código.
+
+| # | Falla | Qué devolvía | Qué la cazó |
+|---|---|---|---|
+| 1 | `select.args.get("from")` — la llave es `from_` | `None`, o sea "esta query no tiene FROM" | Leer `arg_types` del nodo, no la doc |
+| 2 | El multiplicador original con `COUNT(*)` en el numerador | Un `inflated` falso donde no había inflación; C1 pasaba verde midiendo nada | El caso adversario C1, con su respuesta declarada |
+| 3 | `T.rowid` sobre una subconsulta derivada | `NULL` en cada fila, o sea `COUNT(T.rowid) = 0`, o sea `no_contributing_rows` teniendo filas | Sondear una derivada de 20 filas contra la base |
+| 4 | Un campo mal tecleado en la worksheet, `RECONOCIDO:` por `RECONOCIDA:` | Nada: el validador lo ignoraba | **Ésta no llegó a morder.** Ver la nota de abajo |
+| 5 | `args.get("with")` — la llave es `with_` | `None` sobre la id 16 | Correr el detector sobre el corpus |
+| 6 | `COUNT(*)` degradado a `clean` | `clean` sobre las ids 45, 46 y 48, que traen el artefacto de Q5 | Correr el detector sobre el corpus |
+| 7 | **`git grep` con un patrón que empieza en `/`** | **exit 1 y cero matches, sin quejarse** | Un segundo patrón que pegó donde el primero dijo cero |
+
+**El patrón: las siete salieron de un cruce de evidencia, ninguna de releer el
+código.** Un árbol contra su `arg_types`, un caso con respuesta declarada contra
+la implementación, una sonda contra la base, el detector contra el corpus, un
+patrón de búsqueda contra otro. En los siete casos el código se veía bien, y en
+los siete el código estaba mal o no estaba mirando lo que creía.
+
+Corolario operativo, y es el que se aplica de aquí en adelante: **una herramienta
+que no encuentra nada no es evidencia de que no hay nada, hasta que otra
+herramienta distinta busque lo mismo.** Un cero se verifica igual que un uno.
+
+> **Precisión sobre la número 4.** No hay registro de que haya mordido: el guard
+> de `validate_labels.py` —reportar **cualquier** línea con forma `PALABRA:` que
+> no reconozca— se escribió por analogía con las tres primeras, que sí costaron un
+> bug. Se cuenta en la lista porque es el mismo modo de falla, y se anota aparte
+> porque haber cerrado una por anticipado no es lo mismo que haberla sufrido.
+
+### Cómo se cazó la séptima
+
+Buscando rutas absolutas en los 31 commits antes de publicar. El patrón
+`/mnt/c/` devolvió **cero hits en toda la historia**, y era falso: los dos
+`evals/runs/*.json` la traen. El mismo barrido corría `iker` en paralelo y ése sí
+pegó en esos archivos, así que el cero del primero quedó contradicho por el
+segundo en la misma corrida.
+
+Reproducido en tres formas, sobre `HEAD`:
+
+| Patrón | Resultado |
+|---|---|
+| `git grep -E '/mnt/c/'` | exit 1, cero matches |
+| `git grep -e '/mnt/c/'` | exit 1, cero matches |
+| `git grep -E 'mnt/c/Users'` | exit 0, los dos archivos |
+
+**Es exactamente el modo de falla de `args.get("from")`:** una consulta que
+devuelve "no hay nada" cuando lo que pasó es que no buscó. Y en un escaneo de
+secretos es peor que en un parser, porque el resultado que se publica es
+precisamente el cero.
+
+Segundo límite del mismo barrido, y no es un bug sino un alcance mal supuesto:
+**`git grep` lee contenido de archivos y nunca metadata de commits**, así que el
+correo del autor no aparecía por ahí ni podía aparecer. Necesitó su propia
+consulta. Tercer límite declarado: **no se corrió detección por entropía**, solo
+por patrón.
+
 ## Protocolo de archivos congelados
 
 Un archivo de resultados es un registro de una medición que ya ocurrió. No es

@@ -1,4 +1,4 @@
-# text-to-SQL con guardrails
+# FANOUT — text-to-SQL con guardrails
 
 Un text-to-SQL puede devolver un número mal sin que nada se queje: el SQL es
 válido, las tablas existen, los tipos cuadran, y aun así la cifra está inflada
@@ -28,6 +28,9 @@ Requiere [uv](https://docs.astral.sh/uv/) y Python 3.12. En Linux, macOS o WSL.
 Todo esto corre sin llave y sin costo, y es la mayor parte del repo:
 
 ```bash
+git clone https://github.com/ikerpindter/FANOUT.git
+cd FANOUT
+
 uv sync
 uv run python data/build_db.py                 # construye data/portfolio.db
 sha256sum data/portfolio.db                    # tiene que dar c710b635...
@@ -55,6 +58,15 @@ smoke_sqlglot      exit 0   las 4 partes pasan
 El `schema_text` guardado dentro de `evals/runs/*.json` se comparó contra el que
 produce el código hoy: idéntico en los dos archivos, mismo sha256 y misma
 longitud. Los resultados congelados son comprobables por terceros.
+
+**Hueco de esa verificación, y es justo el paso que recorre alguien de fuera:
+`uv sync` contra PyPI nunca se ejercitó.** La máquina donde se corrió no tenía
+red —falló por timeout tras tres reintentos— así que se instaló con
+`uv sync --offline` desde el caché local de uv, o sea sobre paquetes que ya
+estaban ahí. Queda verificado que el lockfile resuelve consistente contra
+`pyproject.toml` y que con esos 20 paquetes exactos todo reproduce. **No** queda
+verificado que un clon en una máquina sin caché llegue a correr. La afirmación
+publicable es "reproduce desde el caché", no "reproduce desde cero".
 
 ### Con API key
 
