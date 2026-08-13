@@ -2008,3 +2008,69 @@ Formato de la nota:
 La razón: un archivo de resultados con una corrección visible sigue siendo
 evidencia. Un archivo reescrito no es evidencia de nada, porque no hay forma
 de saber qué más cambió.
+
+## ESTADO: CERRADO
+
+**13 de agosto de 2026.** Publicado en `github.com/ikerpindter/TEXT-TO-SQL`,
+rama `main`. Tres rebanadas de seis. Este documento es la fuente viva y se lee
+antes que el código.
+
+### Qué se construyó
+
+| | |
+|---|---|
+| **Rebanada 1** | El esqueleto de punta a punta: pregunta → esquema → modelo → SQL → SQLite en `mode=ro` → resultado. Base de 4 tablas con 8 trampas plantadas, construcción determinista |
+| **Rebanada 2** | Inyección de valores de columnas de texto de baja cardinalidad. Completos o nada, nunca una muestra |
+| **Rebanada 3** | El detector de fan-out: 1,255 líneas, dos pasadas, cinco veredictos, cero llamadas a API. Marca y explica, no bloquea |
+| **Publicación** | README para alguien de fuera, cuatro figuras regeneradas desde artefactos congelados, verificación de checkout limpio |
+
+### Qué se midió
+
+| | |
+|---|---|
+| Gate adversario | **25 de 25**, commit `5865127`, cada caso con precondición evaluada antes del veredicto |
+| Corpus real | Las **49** consultas distintas: `not_analyzed` 14, `no_contributing_rows` 12, `clean` 11, `shape_no_inflation` 4, `inflated` 8 |
+| Q4 | **5 de 5** corridas. `row_multiplier` 40.0 y `value_inflation` 41.285653 sobre 14,388,050,000 contra 348,500,000 |
+| Reproducibilidad | Clon desde GitHub con `uv sync --no-cache`: hash de la base, los dos gates y los 4 PNG, todo cuadra |
+| Costo | **$0.012889** en 55 llamadas. Los tokens vienen del campo `usage` y son exactos; **el precio no se coteja contra una factura** |
+
+**Y lo que NO se midió pesa lo mismo**, con su sección propia arriba: cero medidas
+de acierto, el corpus gastado como superficie de medición, las 11 `clean` sin
+auditar, cuatro guards sin blanco real, y la duplicación semántica del corpus sin
+calcular.
+
+### Las dos deudas abiertas, para quien retome
+
+**1. `COUNT(*)` no tiene tabla a la que atribuirse.** 13 de 49 entradas caen en
+`not_analyzed` por `unattributable_aggregate`, y 3 son Q5 en la config B —ids 45,
+46 y 48— que traen el artefacto de fan-out. El detector alcanza 2 de esas 5.
+Causa: el multiplicador se define sobre una `T` y `COUNT(*)` no nombra columna.
+Camino escrito, con las dos salidas fáciles ya descartadas con medición, en
+[la sección 6 de "Para la rebanada 4"](#6-la-deuda-principal-que-deja-la-rebanada-3-count-no-tiene-tabla-a-la-que-atribuirse).
+**Es un cambio de forma del detector, no un parche.**
+
+**2. Las etiquetas humanas nunca se escribieron.** `worksheet_dev.md` tiene sus 25
+líneas `LABEL:` vacías. Sin ellas no hay precision, recall ni tasa de nada, y por
+eso este repo no publica ninguna. Retomarla tiene **tres condiciones que no se
+negocian**, y las tres ya están escritas arriba:
+
+- El invariante del orden está **quemado** (`5e11672`): el detector precede a las
+  etiquetas, así que cualquier conteo que se publique lleva esa nota pegada.
+- El corpus de la rebanada 2 está **gastado**. Una prueba real necesita corridas
+  nuevas del modelo, congeladas antes de mirarlas.
+- **El holdout sigue sellado y sin abrir**, con función suspendida hasta que
+  alguien afine contra dev. Ese día vuelve a medir justo lo que fue diseñado para
+  medir.
+
+**Cerrada el mismo día en que se abrió:** `uv sync` contra PyPI, que era la
+tercera. Verificada con `--no-cache` desde un clon de GitHub, con la corrida
+completa en la sección de publicación.
+
+### La regla que resume el proyecto
+
+**Nunca afirmar por cuánto está mal un número que no se midió.** Vale para el
+guardrail, que no reporta un factor de inflación que no calculó; vale para el
+README, cuyas cifras son todas salida generada y pegada verbatim; y vale para las
+ocho fallas silenciosas, que salieron de cruzar evidencia y no de releer código.
+
+**Un cero se verifica igual que un uno.**
