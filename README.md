@@ -6,6 +6,16 @@ porque un join duplicó filas antes de sumarlas. Este repo mide ese modo de fall
 sobre una base con trampas plantadas a propósito, y le pone encima un detector
 determinista que revisa el SQL producido y explica qué se duplicó y por qué.
 
+- [Cómo está armado](#cómo-está-armado)
+- [Correr](#correr) — [sin API key](#sin-api-key) · [con API key](#con-api-key)
+- [Los datos](#los-datos)
+- [Qué encontró](#qué-encontró) — [`row_multiplier` y `value_inflation` no son lo mismo](#row_multiplier-y-value_inflation-no-son-lo-mismo)
+- [El detector](#el-detector)
+- [Qué está medido y qué no](#qué-está-medido-y-qué-no) — [medido](#medido) · [**no** medido](#no-medido)
+- [La deuda abierta](#la-deuda-abierta)
+- [Fuera de alcance por ahora](#fuera-de-alcance-por-ahora)
+- [Cómo se construye esto](#cómo-se-construye-esto)
+
 ## Cómo está armado
 
 ```
@@ -41,6 +51,15 @@ uv run python evals/gold/smoke_sqlglot.py      # las 4 APIs de sqlglot que se us
 uv run txt2sql --schema                        # el esquema que ve el modelo
 uv run txt2sql --schema --values               # el mismo, con los valores inyectados
 uv run python evals/batch.py --config ddl_only --n 5 --dry-run
+```
+
+Las figuras de este README se regeneran desde cero, y matplotlib va en un grupo
+aparte para que `uv sync` a secas instale el mismo entorno contra el que se midió
+todo lo que está en `evals/results/`:
+
+```bash
+uv sync --group plots
+uv run --group plots python evals/plots/make_plots.py
 ```
 
 La base es determinista: dos corridas de `build_db.py` producen un archivo byte
@@ -143,6 +162,11 @@ está mal es el grano de la agregación.
 Y el `COUNT(h.id)` de esa misma consulta **no** se marca, porque cada casa entra
 una sola vez. El detector evalúa el multiplicador de la tabla que se agrega, no
 el de cualquier tabla del join.
+
+![Reportado contra recalculado sin duplicación, escala logarítmica](docs/img/02_q4_reportado_vs_deduplicado.png)
+
+La escala es logarítmica porque en lineal la barra correcta no se ve. Ésa es
+justamente la razón por la que la falla es silenciosa.
 
 ### `row_multiplier` y `value_inflation` no son lo mismo
 
@@ -255,6 +279,13 @@ Distribución de veredictos sobre las 49 entradas, de
 | `shape_no_inflation` | 4 | 49 |
 | `inflated` | 8 | 49 |
 
+![Distribución de veredictos sobre las 49 consultas](docs/img/01_veredictos_49.png)
+
+**La barra más alta es `not_analyzed`, y se deja ver.** Es el hallazgo, no un
+defecto de presentación: el detector dice cuándo no puede analizar en vez de
+degradar a `clean`, que afirmaría algo que no verificó. Un guardrail que se calla
+sobre lo que no alcanza se lee igual que uno que revisó y no encontró nada.
+
 ### No medido
 
 Esto importa tanto como lo de arriba.
@@ -300,6 +331,12 @@ nuevas del modelo congeladas antes de tocarlas. Eso es la rebanada 4.
 Tres de ellas son Q5 en la configuración con valores —las ids 45, 46 y 48— que el
 propio [ROADMAP](docs/ROADMAP.md) documenta como portadoras del artefacto de
 fan-out. El detector alcanza 2 de esas 5.
+
+![Cobertura sobre Q4 y Q5: 5 de 5 y 2 de 5](docs/img/04_cobertura_q4_q5.png)
+
+**Q5 no falla: queda sin analizar**, y la diferencia importa. Un miss es el
+detector diciendo que no hay nada cuando lo hay; esto es el detector diciendo que
+no puede saberlo. La barra rayada es deuda con causa conocida, no error.
 
 **La causa es una sola y es estructural.** El multiplicador se define sobre una
 tabla `T`: `COUNT(T.rowid) / COUNT(DISTINCT T.rowid)`. Un `COUNT(*)` no nombra
