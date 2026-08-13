@@ -1752,9 +1752,24 @@ cuando toque.
 ## Publicación del repo
 
 **Escrito el 13 de agosto de 2026**, al publicar en
-`github.com/ikerpindter/FANOUT`. El repo se llama **FANOUT** y no
-`text-to-sql-guardrails`: mantiene la convención de RAG y AGENT, y **nombra el
-hallazgo en vez de la categoría.**
+`github.com/ikerpindter/TEXT-TO-SQL`.
+
+#### El nombre
+
+**El repo se llama `TEXT-TO-SQL`.** Se consideraron y descartaron dos:
+
+| Candidato | Por qué no |
+|---|---|
+| `text-to-sql-guardrails` | Describe la categoría y no la busca nadie con ese nombre |
+| `FANOUT` | **Nombra el hallazgo**, que es lo mejor que tenía. Pero un repo se encuentra por lo que hace, no por lo que descubrió |
+
+Gana `TEXT-TO-SQL` por dos razones: **es buscable** y **coincide con la convención
+de RAG y AGENT**, que son los otros dos repos de la serie. Un nombre que rompe la
+convención obliga a explicar la serie cada vez.
+
+**El gancho vive en la descripción del repo, no en el nombre.** Es el lugar
+correcto: la descripción se lee junto al nombre en cualquier listado, se cambia
+sin romper una sola URL, y no obliga a que el nombre haga dos trabajos a la vez.
 
 ### Verificación de checkout limpio
 

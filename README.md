@@ -1,4 +1,4 @@
-# FANOUT — text-to-SQL con guardrails
+# text-to-SQL con guardrails
 
 Un text-to-SQL puede devolver un número mal sin que nada se queje: el SQL es
 válido, las tablas existen, los tipos cuadran, y aun así la cifra está inflada
@@ -28,8 +28,8 @@ Requiere [uv](https://docs.astral.sh/uv/) y Python 3.12. En Linux, macOS o WSL.
 Todo esto corre sin llave y sin costo, y es la mayor parte del repo:
 
 ```bash
-git clone https://github.com/ikerpindter/FANOUT.git
-cd FANOUT
+git clone https://github.com/ikerpindter/TEXT-TO-SQL.git
+cd TEXT-TO-SQL
 
 uv sync
 uv run python data/build_db.py                 # construye data/portfolio.db
