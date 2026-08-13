@@ -7,7 +7,7 @@ sobre una base con trampas plantadas a propósito, y le pone encima un detector
 determinista que revisa el SQL producido y explica qué se duplicó y por qué.
 
 - [Cómo está armado](#cómo-está-armado)
-- [Correr](#correr) — [sin API key](#sin-api-key) · [con API key](#con-api-key)
+- [Correr](#correr) — [sin API key](#sin-api-key) · [que esto reproduce no es una promesa](#que-esto-reproduce-no-es-una-promesa) · [con API key](#con-api-key)
 - [Los datos](#los-datos)
 - [Qué encontró](#qué-encontró) — [`row_multiplier` y `value_inflation` no son lo mismo](#row_multiplier-y-value_inflation-no-son-lo-mismo)
 - [El detector](#el-detector)
@@ -62,30 +62,36 @@ uv sync --group plots
 uv run --group plots python evals/plots/make_plots.py
 ```
 
-La base es determinista: dos corridas de `build_db.py` producen un archivo byte
-por byte idéntico. Salida de un checkout limpio, verificada el 13 de agosto de
-2026 clonando en un directorio nuevo:
+### Que esto reproduce no es una promesa
+
+Es el bloque de arriba corrido de verdad. Clon nuevo desde GitHub el 13 de agosto
+de 2026, con `--no-cache` para que nada saliera de un caché local, o sea el mismo
+camino que recorre alguien que llega por primera vez:
 
 ```
-uv lock --check    exit 0   (20 paquetes)
-build_db.py        exit 0
-sha256             c710b6354d57bc0e74feb9d4233bb77e902ae4ff6f49b85960a6eef15684d762
-gate_adversarial   exit 0   25 de 25 pasan
-smoke_sqlglot      exit 0   las 4 partes pasan
+git clone                exit 0
+uv sync --no-cache       exit 0   (lock resuelve 31; 19 instalados por defecto)
+uv lock --check          exit 0
+build_db.py              exit 0
+sha256                   c710b6354d57bc0e74feb9d4233bb77e902ae4ff6f49b85960a6eef15684d762   CUADRA
+gate_adversarial.py      exit 0   25 de 25 pasan
+smoke_sqlglot.py         exit 0   las 4 partes pasan
+make_plots.py            exit 0   los 4 PNG byte a byte iguales a los commiteados
 ```
+
+El lock resuelve **31** paquetes porque incluye el grupo `plots`; `uv sync` a
+secas instala **19** y matplotlib no entra. Las cifras de `evals/results/` se
+midieron contra ese entorno de 19.
 
 El `schema_text` guardado dentro de `evals/runs/*.json` se comparó contra el que
 produce el código hoy: idéntico en los dos archivos, mismo sha256 y misma
-longitud. Los resultados congelados son comprobables por terceros.
+longitud. Los resultados congelados son comprobables por terceros: cualquiera
+puede reconstruir la base y el prompt exactos con los que se midió.
 
-**Hueco de esa verificación, y es justo el paso que recorre alguien de fuera:
-`uv sync` contra PyPI nunca se ejercitó.** La máquina donde se corrió no tenía
-red —falló por timeout tras tres reintentos— así que se instaló con
-`uv sync --offline` desde el caché local de uv, o sea sobre paquetes que ya
-estaban ahí. Queda verificado que el lockfile resuelve consistente contra
-`pyproject.toml` y que con esos 20 paquetes exactos todo reproduce. **No** queda
-verificado que un clon en una máquina sin caché llegue a correr. La afirmación
-publicable es "reproduce desde el caché", no "reproduce desde cero".
+**Lo que sigue sin verificarse, y no se afirma:** que los PNG salgan idénticos en
+**otra** máquina. El rasterizado de fuentes depende de las fuentes instaladas. Lo
+verificado es un clon distinto, en un directorio distinto, sin caché — no un
+sistema operativo distinto.
 
 ### Con API key
 
@@ -261,7 +267,7 @@ Las dos listas van juntas a propósito: una sin la otra miente por omisión.
 | Gate adversario | **25 de 25**, commit `5865127`. Cada caso con una **precondición evaluada antes del veredicto**: un caso que no puede distinguir una implementación correcta de una rota **falla**, en vez de pasar en verde |
 | Comportamiento sobre output real | Las **49** consultas distintas que el modelo produjo en las rebanadas 1 y 2, corridas y descritas |
 | Q4 | **5 de 5** corridas detectadas, con el deduplicado recalculado contra la base en $348,500,000 |
-| Checkout limpio | Clon nuevo, `uv sync`, build, hash y los dos gates: todo pasa (bloque de arriba) |
+| Checkout limpio | Clon desde GitHub con `uv sync --no-cache`: build, hash, los dos gates y los PNG, todo pasa (bloque de arriba) |
 
 Un número de gate no se reporta nunca solo: va con su commit y su conteo de
 casos. Este repo ya tiene "21 de 21" (`b0de43d`) y "25 de 25" (`5865127`). Los

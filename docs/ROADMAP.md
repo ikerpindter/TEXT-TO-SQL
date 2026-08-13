@@ -1795,27 +1795,43 @@ era la otra mitad del pendiente y es la que hace comprobables los resultados
 congelados: cualquiera puede reconstruir la base y el prompt exactos con los que
 se midió.
 
-#### El hueco: `uv sync` contra PyPI nunca se ejercitó
+#### El hueco de PyPI: abierto y cerrado el mismo día
 
-**Y es justo el paso que recorre alguien de fuera.**
+**Se deja el registro completo, no solo el final**, porque cómo se cerró importa
+tanto como que se haya cerrado.
 
-El entorno donde se hizo la verificación no tiene red: `uv sync` contra PyPI falló
-por timeout tras tres reintentos, así que la instalación se resolvió con
-`uv sync --offline` desde el caché local de uv. Todo lo que está en la tabla de
-arriba corrió sobre paquetes que **ya estaban en esta máquina**.
+**Cómo se abrió.** En la primera corrida, `uv sync` contra PyPI falló por timeout
+tras tres reintentos, así que la instalación se resolvió con `uv sync --offline`
+desde el caché local de uv: todo corrió sobre paquetes que **ya estaban en esa
+máquina**. Se escribió como hueco con esta frase, que era la correcta entonces:
+*la afirmación publicable es "reproduce desde el caché", no "reproduce desde
+cero"*.
 
-Qué queda verificado y qué no, sin suavizar:
+**Cómo se cerró.** Horas después, ya publicado el repo, se rehízo entera contra
+el repositorio de GitHub y **con `--no-cache`**, que es más fuerte que quitar el
+`--offline`: obliga a que ni un solo artefacto salga de un caché local.
 
-| | |
+| Paso | Resultado |
 |---|---|
-| **Sí** | El lockfile resuelve consistente contra `pyproject.toml` (`uv lock --check` exit 0) |
-| **Sí** | Con esos 20 paquetes exactos, la base, los dos gates y el `schema_text` reproducen |
-| **No** | Que PyPI sirva hoy esos 20 paquetes con esos hashes |
-| **No** | Que un clon en una máquina sin caché llegue a correr |
+| `git clone` desde GitHub | exit 0 |
+| **`uv sync --no-cache`** | **exit 0** |
+| `uv lock --check` | exit 0, **31 paquetes resueltos** |
+| `build_db.py` | exit 0 |
+| sha256 de `portfolio.db` | **cuadra** |
+| `gate_adversarial.py` | exit 0, **25 de 25** |
+| `smoke_sqlglot.py` | exit 0, las 4 partes |
+| `make_plots.py` | exit 0, **los 4 PNG byte a byte iguales a los commiteados** |
 
-**No se cierra inventando el paso que falta.** Se cierra el día que alguien corra
-`uv sync` con red sobre un clon limpio, y hasta entonces la afirmación publicable
-es "reproduce desde el caché", no "reproduce desde cero".
+**Nota sobre el conteo de paquetes.** La primera tabla de esta sección dice 20 y
+ésta dice 31, y las dos son correctas: entre una y otra se agregó el grupo
+`plots` con matplotlib, que el lock resuelve aunque `uv sync` a secas no lo
+instale. **Instalados por defecto: 19.** Ése es el entorno contra el que se midió
+todo lo que vive en `evals/results/`, y no cambió. El 20 de la corrida del lote de
+verificación del 29 de julio se queda como estaba: era cierto ese día.
+
+**Lo que sigue sin verificarse, y no se afirma:** que los PNG salgan idénticos en
+**otra** máquina. El rasterizado de fuentes depende de las fuentes instaladas. Lo
+verificado es otro clon, otro directorio, sin caché — no otro sistema.
 
 ### Las dos cosas personales que se publican a propósito
 
