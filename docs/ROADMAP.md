@@ -1849,11 +1849,11 @@ Lo que sí queda anotado, porque el que viene después no tiene por qué deducir
 día hay que revertirla, el costo es el rewrite completo y esta sección dice por
 qué no se pagó.
 
-## Las siete fallas silenciosas, y el patrón que las une
+## Las ocho fallas silenciosas, y el patrón que las une
 
-**Cerrada la séptima el 13 de agosto de 2026.** Cada una devolvía un resultado de
-aspecto correcto sin lanzar nada, y ninguna se habría encontrado releyendo el
-código.
+**Cerradas la séptima y la octava el 13 de agosto de 2026.** Cada una devolvía un
+resultado de aspecto correcto sin lanzar nada, y ninguna se habría encontrado
+releyendo el código.
 
 | # | Falla | Qué devolvía | Qué la cazó |
 |---|---|---|---|
@@ -1864,12 +1864,14 @@ código.
 | 5 | `args.get("with")` — la llave es `with_` | `None` sobre la id 16 | Correr el detector sobre el corpus |
 | 6 | `COUNT(*)` degradado a `clean` | `clean` sobre las ids 45, 46 y 48, que traen el artefacto de Q5 | Correr el detector sobre el corpus |
 | 7 | **`git grep` con un patrón que empieza en `/`** | **exit 1 y cero matches, sin quejarse** | Un segundo patrón que pegó donde el primero dijo cero |
+| 8 | **Dos `git ls-remote` con timeout leídos como "no hay red"** | **Un diagnóstico entero construido sobre dos sondas fallidas** | Intentar el push de todos modos: salió a la primera |
 
-**El patrón: las siete salieron de un cruce de evidencia, ninguna de releer el
+**El patrón: las ocho salieron de un cruce de evidencia, ninguna de releer el
 código.** Un árbol contra su `arg_types`, un caso con respuesta declarada contra
 la implementación, una sonda contra la base, el detector contra el corpus, un
-patrón de búsqueda contra otro. En los siete casos el código se veía bien, y en
-los siete el código estaba mal o no estaba mirando lo que creía.
+patrón de búsqueda contra otro, un intento real contra un diagnóstico. En los
+ocho casos el código —o el razonamiento— se veía bien, y en los ocho no estaba
+mirando lo que creía.
 
 Corolario operativo, y es el que se aplica de aquí en adelante: **una herramienta
 que no encuentra nada no es evidencia de que no hay nada, hasta que otra
@@ -1907,6 +1909,49 @@ Segundo límite del mismo barrido, y no es un bug sino un alcance mal supuesto:
 correo del autor no aparecía por ahí ni podía aparecer. Necesitó su propia
 consulta. Tercer límite declarado: **no se corrió detección por entropía**, solo
 por patrón.
+
+### Cómo se cazó la octava, y es la misma forma al revés
+
+**El mismo día, unas horas después, y esta vez la falla no estaba en una
+herramienta sino en el razonamiento sobre su salida.**
+
+Antes del primer push se sondeó la red con `git ls-remote` contra un repo público
+y contra el destino. **Las dos sondas salieron con código 124, o sea timeout.** De
+ahí se concluyó, y se reportó como hecho, que **GitHub era inalcanzable y el push
+tenía que correrlo Iker a mano.**
+
+Era falso. Iker mandó intentar el push de todos modos y **salió a la primera**,
+sin un solo reintento.
+
+| | Séptima | Octava |
+|---|---|---|
+| El cero venía de | una herramienta que no buscó | dos sondas que fallaron |
+| Se leyó como | "no existe" | "no hay red" |
+| Lo desmintió | otro patrón en la misma corrida | **intentar la operación real** |
+
+**Es la misma forma, en dirección contraria.** La séptima es un cero falso que
+oculta algo que sí está; la octava es un cero falso que declara imposible algo
+que sí se puede. Las dos son el mismo error de fondo: **tomar el resultado
+negativo de una herramienta por un hecho del mundo, sin cruzarlo con nada.**
+
+Dos cosas que hay que dejar dichas, porque separarlas es lo que hace útil el
+registro:
+
+- **La falla fue del asistente.** Nada en el repo la provocó, y una sonda que da
+  timeout admite por lo menos tres lecturas —no hay red, el host filtra ese
+  tráfico, la sonda se fue por un camino distinto al del push— de las cuales se
+  eligió una y se publicó como conclusión.
+- **Lo que la desmintió fue la instrucción de intentarlo igual.** No fue una
+  relectura ni un razonamiento más fino: fue ejecutar la operación real. El
+  asistente sí la reportó en voz alta al turno siguiente, en vez de corregir en
+  silencio, que es el mínimo que este proyecto pide de una falla propia.
+
+**Y sobrevive un hecho que la corrección no borra:** `uv sync` contra PyPI **sí**
+falló por timeout tres veces esa tarde, con red disponible para GitHub. Que el
+diagnóstico general fuera falso no vuelve falso ese dato. Por eso el hueco del
+checkout limpio se quedó escrito en vez de retirarse junto con la conclusión
+equivocada: **una conclusión mal sacada de una medición no invalida la
+medición.**
 
 ## Protocolo de archivos congelados
 
