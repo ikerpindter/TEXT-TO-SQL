@@ -15,6 +15,7 @@ determinista que revisa el SQL producido y explica qué se duplicó y por qué.
 - [La deuda abierta](#la-deuda-abierta)
 - [Fuera de alcance por ahora](#fuera-de-alcance-por-ahora)
 - [Cómo se construye esto](#cómo-se-construye-esto)
+- [Licencia](#licencia)
 
 ## Cómo está armado
 
@@ -409,3 +410,11 @@ separado y juntos describiendo una consulta que no existe.
 El orden de rebanadas, las decisiones pre-registradas, las predicciones fallidas
 y las deudas abiertas están en [docs/ROADMAP.md](docs/ROADMAP.md), que es la
 fuente viva.
+
+## Licencia
+
+MIT. El texto completo está en [LICENSE](LICENSE).
+
+Las cifras de `financials` son datos públicos de los 10-K de Lennar y D.R.
+Horton, citados uno por uno en [data/seeds/SOURCES.md](data/seeds/SOURCES.md).
+El resto de la base es sintético.
